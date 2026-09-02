@@ -15,7 +15,8 @@ from shapely import contains, distance, intersects, points
 from shapely.geometry import LineString, Point, mapping, shape
 from shapely.ops import unary_union
 
-from app.schemas import PlanRequest, PlanResponse, ValidationCheck
+from app.schemas import AlternativesResponse, PlanRequest, PlanResponse, ValidationCheck
+from app.strategy_profiles import PROFILES, StrategyProfile
 
 GRID_RESOLUTION_M = 5.0
 # Dimensionless multipliers applied to metre movement cost. Kept here for auditability.
@@ -124,7 +125,9 @@ class CostGrid:
         return col, row
 
 
-def build_cost_grid(scenario: PreparedScenario, exclusions: Any) -> CostGrid:
+def build_cost_grid(
+    scenario: PreparedScenario, exclusions: Any, profile: StrategyProfile
+) -> CostGrid:
     xmin, ymin, xmax, ymax = scenario.study_area.bounds
     width = math.ceil((xmax - xmin) / GRID_RESOLUTION_M)
     height = math.ceil((ymax - ymin) / GRID_RESOLUTION_M)
@@ -136,12 +139,14 @@ def build_cost_grid(scenario: PreparedScenario, exclusions: Any) -> CostGrid:
     blocked = np.logical_or(~inside, intersects(exclusions, cell_points)).reshape(height, width)
     costs = np.zeros_like(xs, dtype=float)
     if not scenario.environmental.is_empty:
-        costs += contains(scenario.environmental, cell_points) * ENVIRONMENTAL_TRAVERSAL_WEIGHT
+        costs += contains(scenario.environmental, cell_points) * profile.environmental
     if not scenario.water.is_empty:
-        costs += contains(scenario.water, cell_points) * WATER_TRAVERSAL_WEIGHT
+        costs += contains(scenario.water, cell_points) * profile.water
     if not scenario.buildings.is_empty:
         building_distance = distance(cell_points, scenario.buildings)
-        costs += BUILDING_PROXIMITY_WEIGHT * np.exp(-building_distance / BUILDING_PROXIMITY_DECAY_M)
+        costs += profile.building_proximity * np.exp(
+            -building_distance / BUILDING_PROXIMITY_DECAY_M
+        )
     return CostGrid(xmin, ymin, width, height, blocked, costs.reshape(height, width))
 
 
@@ -276,7 +281,8 @@ def plan(scenario_id: str, features: list[dict[str, Any]], request: PlanRequest)
     scenario = prepare_scenario(features)
     validate_endpoints(scenario)
     exclusions = hard_exclusion(scenario, request)
-    grid = build_cost_grid(scenario, exclusions)
+    profile = PROFILES[str(request.strategy)]
+    grid = build_cost_grid(scenario, exclusions, profile)
     start, end = scenario.endpoints["grid_connection"], scenario.endpoints["proposed_development"]
     nodes = astar(grid, start, end)
     raw_points = [start, *[grid.point_for(node) for node in nodes], end]
@@ -305,7 +311,7 @@ def plan(scenario_id: str, features: list[dict[str, Any]], request: PlanRequest)
     )
     return PlanResponse(
         plan_id=sha256(plan_key.encode()).hexdigest()[:16],
-        strategy="balanced",
+        strategy=str(request.strategy),
         grid_resolution_m=GRID_RESOLUTION_M,
         computation_duration_ms=round((time.perf_counter() - started) * 1000, 1),
         feasible=True,
@@ -335,4 +341,44 @@ def plan(scenario_id: str, features: list[dict[str, Any]], request: PlanRequest)
             "Validate vector result",
             "Calculate metrics",
         ],
+        strategy_cost=round(
+            simplified.length * (1 + profile.environmental * environmental_area / max(row.area, 1)),
+            1,
+        ),
+    )
+
+
+def alternatives(
+    scenario_id: str, features: list[dict[str, Any]], request: PlanRequest
+) -> AlternativesResponse:
+    started = time.perf_counter()
+    plans = [
+        plan(scenario_id, features, request.model_copy(update={"strategy": strategy}))
+        for strategy in ("shortest", "environmental", "balanced")
+    ]
+    distinctness: dict[str, dict[str, float]] = {}
+    for index, left in enumerate(plans):
+        left_line = shape(left.centreline)
+        for right in plans[index + 1 :]:
+            right_line = shape(right.centreline)
+            hausdorff = left_line.hausdorff_distance(right_line)
+            distinctness[f"{left.strategy}:{right.strategy}"] = {
+                "hausdorff_distance_m": round(hausdorff, 1),
+                "length_difference_m": round(abs(left.route_length_m - right.route_length_m), 1),
+                "environmental_overlap_difference_m2": round(
+                    abs(
+                        left.environmental_sensitivity_overlap_m2
+                        - right.environmental_sensitivity_overlap_m2
+                    ),
+                    1,
+                ),
+            }
+            if hausdorff < 10 and abs(left.route_length_m - right.route_length_m) < 10:
+                left.converged_with.append(right.strategy)
+                right.converged_with.append(left.strategy)
+    return AlternativesResponse(
+        assumptions=request,
+        alternatives=plans,
+        distinctness=distinctness,
+        comparison_runtime_ms=round((time.perf_counter() - started) * 1000, 1),
     )

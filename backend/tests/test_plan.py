@@ -20,3 +20,18 @@ def test_unknown_scenario_has_structured_planning_error() -> None:
     response = TestClient(app).post("/api/plan", json={"scenario_id": "unknown"})
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "unknown_scenario"
+
+
+def test_alternatives_reports_all_profiles_and_convergence() -> None:
+    response = TestClient(app).post(
+        "/api/plan/alternatives", json={"scenario_id": "zurich-dietikon-urdorf-v1"}
+    )
+    assert response.status_code == 200
+    alternatives = response.json()["alternatives"]
+    assert [alternative["strategy"] for alternative in alternatives] == [
+        "shortest",
+        "environmental",
+        "balanced",
+    ]
+    assert all(alternative["feasible"] for alternative in alternatives)
+    assert response.json()["distinctness"]["shortest:balanced"]["hausdorff_distance_m"] == 0

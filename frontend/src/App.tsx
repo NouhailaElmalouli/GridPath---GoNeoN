@@ -18,6 +18,7 @@ type Scenario = {
   layers: GeoJSON.FeatureCollection;
 };
 type Plan = {
+  strategy: string;
   feasible: boolean;
   centreline: GeoJSON.Geometry;
   right_of_way: GeoJSON.Geometry;
@@ -164,10 +165,10 @@ function App() {
     if (!scenario || planning) return;
     setPlanning(true); setPlanError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/plan`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario_id: "zurich-dietikon-urdorf-v1", building_clearance_m: clearance, right_of_way_width_m: rightOfWayWidth, strategy: "balanced" }) });
+      const response = await fetch(`${apiBaseUrl}/api/plan/alternatives`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario_id: "zurich-dietikon-urdorf-v1", building_clearance_m: clearance, right_of_way_width_m: rightOfWayWidth, strategy: "balanced" }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail?.message ?? "Planning request failed");
-      setPlan(body as Plan);
+      setPlan((body.alternatives as Plan[]).find((alternative) => alternative.strategy === "balanced") ?? body.alternatives[0]);
     } catch (requestError) { setPlanError(requestError instanceof Error ? requestError.message : "Planning request failed"); }
     finally { setPlanning(false); }
   };
@@ -186,7 +187,7 @@ function App() {
             <div className="constraint-card"><span>Prepared layers</span><dl>{Object.entries(layerLabels).map(([name, label]) => <div key={name}><dt><label><input type="checkbox" checked={visibleLayers[name]} onChange={() => toggleLayer(name)} disabled={scenario.metadata.layer_counts[name] === 0} /> {label}</label></dt><dd>{scenario.metadata.layer_counts[name]}</dd></div>)}</dl></div>
             <div className="constraint-card"><span>Endpoints</span><dl><div><dt>Grid connection</dt><dd>Synthetic</dd></div><div><dt>Proposed development</dt><dd>Synthetic</dd></div></dl></div>
             <div className="constraint-card"><span>Engineering assumptions</span><label>Building clearance <input type="number" min="10" max="60" value={clearance} onChange={(event) => setClearance(Number(event.target.value))} /> m</label><label>Right-of-way width <input type="number" min="20" max="80" value={rightOfWayWidth} onChange={(event) => setRightOfWayWidth(Number(event.target.value))} /> m</label></div>
-            <button type="button" onClick={generatePlan} disabled={planning}>{planning ? "Calculating balanced alignment…" : "Generate balanced alignment"}<span>5 m grid</span></button>
+            <button type="button" onClick={generatePlan} disabled={planning}>{planning ? "Calculating alternatives…" : "Generate three alternatives"}<span>5 m grid</span></button>
             {planError ? <div className="message error-message">{planError}</div> : null}
             {plan ? <div className="constraint-card result-card"><span>{plan.feasible ? "Validated alignment" : "Invalid alignment"}</span><dl><div><dt>Length</dt><dd>{plan.route_length_m} m</dd></div><div><dt>Detour ratio</dt><dd>{plan.detour_ratio}</dd></div><div><dt>Clearance</dt><dd>{plan.minimum_building_clearance_m} m</dd></div><div><dt>Environmental overlap</dt><dd>{plan.environmental_sensitivity_overlap_m2} m²</dd></div><div><dt>Water crossings</dt><dd>{plan.water_crossing_count}</dd></div></dl><details><summary>Calculation trace</summary><ol>{plan.calculation_trace.map((step) => <li key={step}>{step}</li>)}</ol></details></div> : null}
             <p className="source-note">{scenario.metadata.source}<br />Retrieved {scenario.metadata.retrieved_at}</p>

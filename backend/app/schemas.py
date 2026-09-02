@@ -9,6 +9,12 @@ class OptimizationStrategy(StrEnum):
     BALANCED = "balanced"
 
 
+class PlanningStrategy(StrEnum):
+    SHORTEST = "shortest"
+    ENVIRONMENTAL = "environmental"
+    BALANCED = "balanced"
+
+
 class PlanningConstraints(BaseModel):
     building_clearance_m: float = Field(default=25, ge=0, le=100)
     right_of_way_buffer_m: float = Field(default=30, ge=0, le=100)
@@ -62,7 +68,7 @@ class PlanRequest(BaseModel):
     scenario_id: str
     building_clearance_m: float = Field(default=25, ge=10, le=60)
     right_of_way_width_m: float = Field(default=40, ge=20, le=80)
-    strategy: str = Field(default="balanced", pattern="^balanced$")
+    strategy: PlanningStrategy = PlanningStrategy.BALANCED
 
 
 class ValidationCheck(BaseModel):
@@ -98,3 +104,13 @@ class PlanResponse(BaseModel):
     validation_checks: list[ValidationCheck]
     warnings: list[str]
     calculation_trace: list[str]
+    strategy_cost: float = 0
+    converged_with: list[str] = []
+
+
+class AlternativesResponse(BaseModel):
+    assumptions: PlanRequest
+    alternatives: list[PlanResponse]
+    distinctness: dict[str, dict[str, float]]
+    default_selection: str = "balanced"
+    comparison_runtime_ms: float
