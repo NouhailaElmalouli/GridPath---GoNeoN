@@ -1,0 +1,19 @@
+{
+  "folders": [
+    { "name": "Corridor Planner", "path": "." },
+    { "name": "Backend", "path": "backend" },
+    { "name": "Frontend", "path": "frontend" }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:Corridor Planner}/.venv/Scripts/python.exe",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["backend/tests"],
+    "editor.formatOnSave": true,
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/dist": true
+    }
+  }
+}
+

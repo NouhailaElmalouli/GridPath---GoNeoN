@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: agentic-corridor-api
+Version: 0.1.0
+Summary: Deterministic spatial backend for the agentic corridor planner
+Requires-Python: >=3.11
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.34
+Requires-Dist: pydantic-settings<3,>=2.7
+Requires-Dist: shapely<3,>=2.0
+Requires-Dist: geopandas<2,>=1.0
+Requires-Dist: pyproj<4,>=3.7
+Requires-Dist: numpy<3,>=2.0
+Requires-Dist: networkx<4,>=3.4
+Requires-Dist: osmnx<3,>=2.0
+Requires-Dist: httpx<1,>=0.28
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8.3; extra == "dev"
+Requires-Dist: pytest-cov<7,>=6; extra == "dev"
+Requires-Dist: ruff<1,>=0.9; extra == "dev"
