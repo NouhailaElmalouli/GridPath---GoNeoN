@@ -30,6 +30,7 @@ type Plan = {
   water_crossing_count: number;
   validation_checks: { passed: boolean }[];
   calculation_trace: string[];
+  converged_with?: string[];
 };
 
 const apiBaseUrl = "http://localhost:8000";
@@ -55,6 +56,7 @@ function App() {
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [alternatives, setAlternatives] = useState<Plan[]>([]);
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [clearance, setClearance] = useState(25);
@@ -168,7 +170,9 @@ function App() {
       const response = await fetch(`${apiBaseUrl}/api/plan/alternatives`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario_id: "zurich-dietikon-urdorf-v1", building_clearance_m: clearance, right_of_way_width_m: rightOfWayWidth, strategy: "balanced" }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail?.message ?? "Planning request failed");
-      setPlan((body.alternatives as Plan[]).find((alternative) => alternative.strategy === "balanced") ?? body.alternatives[0]);
+      const calculated = body.alternatives as Plan[];
+      setAlternatives(calculated);
+      setPlan(calculated.find((alternative) => alternative.strategy === "balanced") ?? calculated[0]);
     } catch (requestError) { setPlanError(requestError instanceof Error ? requestError.message : "Planning request failed"); }
     finally { setPlanning(false); }
   };
@@ -189,6 +193,7 @@ function App() {
             <div className="constraint-card"><span>Engineering assumptions</span><label>Building clearance <input type="number" min="10" max="60" value={clearance} onChange={(event) => setClearance(Number(event.target.value))} /> m</label><label>Right-of-way width <input type="number" min="20" max="80" value={rightOfWayWidth} onChange={(event) => setRightOfWayWidth(Number(event.target.value))} /> m</label></div>
             <button type="button" onClick={generatePlan} disabled={planning}>{planning ? "Calculating alternatives…" : "Generate three alternatives"}<span>5 m grid</span></button>
             {planError ? <div className="message error-message">{planError}</div> : null}
+            {alternatives.length ? <div className="comparison-cards">{alternatives.map((alternative) => <button className={`comparison-card ${plan?.strategy === alternative.strategy ? "selected" : ""}`} key={alternative.strategy} type="button" onClick={() => setPlan(alternative)}><strong>{alternative.strategy === "shortest" ? "Shortest feasible" : alternative.strategy === "environmental" ? "Environmental priority" : "Balanced"}</strong><span>{alternative.route_length_m} m · {alternative.environmental_sensitivity_overlap_m2} m² environmental</span><span>{alternative.converged_with?.length ? `Converges with ${alternative.converged_with.join(", ")}` : "Distinct alignment"}</span></button>)}</div> : null}
             {plan ? <div className="constraint-card result-card"><span>{plan.feasible ? "Validated alignment" : "Invalid alignment"}</span><dl><div><dt>Length</dt><dd>{plan.route_length_m} m</dd></div><div><dt>Detour ratio</dt><dd>{plan.detour_ratio}</dd></div><div><dt>Clearance</dt><dd>{plan.minimum_building_clearance_m} m</dd></div><div><dt>Environmental overlap</dt><dd>{plan.environmental_sensitivity_overlap_m2} m²</dd></div><div><dt>Water crossings</dt><dd>{plan.water_crossing_count}</dd></div></dl><details><summary>Calculation trace</summary><ol>{plan.calculation_trace.map((step) => <li key={step}>{step}</li>)}</ol></details></div> : null}
             <p className="source-note">{scenario.metadata.source}<br />Retrieved {scenario.metadata.retrieved_at}</p>
             <p className="disclaimer">{scenario.metadata.disclaimer}</p>
