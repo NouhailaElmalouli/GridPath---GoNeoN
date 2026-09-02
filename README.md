@@ -14,7 +14,7 @@ GridPath is an adjacent platform-extension concept created for this exercise, no
 backend/             FastAPI API and deterministic spatial services
 frontend/            React, TypeScript, Vite, and MapLibre interface
 data/raw/            Download cache (not committed)
-data/processed/      Normalized demo scenario (generated, not committed)
+data/processed/      Committed canonical prepared demo scenario
 docs/                Product scope and architecture decisions
 scripts/             Data preparation and local development helpers
 ```
@@ -72,6 +72,8 @@ npm run build
 
 ## Data policy
 
-The final demo will use a small prepared Zurich-region dataset downloaded during development and committed only if licensing and file size allow it. Runtime requests must not depend on Overpass or municipal WFS availability.
+The demo uses a small committed OpenStreetMap-derived Zurich-region dataset
+prepared during development. Runtime requests never depend on Overpass or
+municipal WFS availability. See `docs/aoi-selection.md` for source limitations.
 
 Planning prototype only. Results are not regulatory-compliance determinations, construction-ready alignments, or a substitute for statutory, environmental, land-rights, or engineering review.

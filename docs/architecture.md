@@ -49,4 +49,6 @@ degrees.
 - `POST /api/plan`
 - `POST /api/interpret`
 
-Only the health endpoint is included in the initial scaffold.
+The initial scenario pass includes the health endpoint and local-file-backed
+scenario endpoint. It does not include routing, scoring, right-of-way validation,
+or agent orchestration.

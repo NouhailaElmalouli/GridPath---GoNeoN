@@ -64,6 +64,10 @@ button, input, textarea { font: inherit; }
 .constraint-card dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #252b35; }
 .constraint-card dt { color: #7f8998; }
 .constraint-card dd { margin: 0; text-align: right; }
+.constraint-card label { cursor: pointer; }
+.constraint-card input { accent-color: #25f4d0; vertical-align: middle; }
+.source-note { margin: 0; color: #8792a1; font-size: 11px; line-height: 1.5; }
+.error-message { border-left-color: #ff5252; }
 
 .agent-panel button {
   display: flex;
@@ -103,6 +107,10 @@ button, input, textarea { font: inherit; }
 .legend .origin { background: #25f4d0; }
 .legend .destination { background: #ff3ca6; }
 .legend .exclusion { border-radius: 1px; background: #ff5252; }
+.legend .building { border-radius: 1px; background: #b85a5a; }
+.legend .environment { border-radius: 1px; background: #4eaa67; }
+.legend .water { border-radius: 1px; background: #3b9fe2; }
+.legend .protected { border-radius: 1px; background: #ec3ba6; }
 
 @media (max-width: 760px) {
   body { overflow: auto; }
@@ -110,4 +118,3 @@ button, input, textarea { font: inherit; }
   .agent-panel { border-right: 0; border-bottom: 1px solid #252934; }
   .map-stage { min-height: 60vh; }
 }
-

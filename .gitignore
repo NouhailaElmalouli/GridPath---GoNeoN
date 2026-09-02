@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+cache/
 .coverage
 htmlcov/
 
@@ -19,6 +20,8 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/zurich_gridpath_scenario.geojson
+!data/processed/zurich_gridpath_manifest.json
 
 .DS_Store
 Thumbs.db

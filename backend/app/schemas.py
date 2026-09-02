@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OptimizationStrategy(StrEnum):
@@ -19,3 +19,40 @@ class PlanningConstraints(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+class ScenarioBounds(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+
+
+class ScenarioEndpoint(BaseModel):
+    id: str
+    label: str
+    coordinates: tuple[float, float]
+    provenance: str
+
+
+class ScenarioMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scenario_id: str
+    scenario_name: str
+    selected_location: str
+    bounds: ScenarioBounds
+    source: str
+    retrieved_at: str
+    source_crs: str
+    analysis_crs: str
+    layer_counts: dict[str, int]
+    statutory_protected_present: bool
+    limitations: list[str]
+    disclaimer: str
+    endpoints: list[ScenarioEndpoint]
+
+
+class ScenarioResponse(BaseModel):
+    metadata: ScenarioMetadata
+    layers: dict[str, object]
