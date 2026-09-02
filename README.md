@@ -58,6 +58,23 @@ npm run dev
 
 Open <http://localhost:5173>. The API health endpoint is <http://localhost:8000/api/health>.
 
+## Balanced alignment calculation
+
+`POST /api/plan` uses the committed scenario only. It runs deterministic A* on a
+5 m EPSG:2056 grid with eight-direction movement and Euclidean heuristic. The
+building hard-exclusion distance is `building_clearance_m + right_of_way_width_m / 2`;
+clearance is measured from the outer right-of-way edge. Statutory protected
+areas are hard exclusions; environmental and water layers are soft penalties.
+
+```json
+{"scenario_id":"zurich-dietikon-urdorf-v1","building_clearance_m":25,"right_of_way_width_m":40,"strategy":"balanced"}
+```
+
+The response contains EPSG:4326 centreline, right-of-way, exclusion-envelope,
+metrics, vector-validation checks, and a deterministic calculation trace.
+The 5 m grid is appropriate for early screening only; it is not transmission
+engineering, a land-rights assessment, or regulatory approval.
+
 ## Checks
 
 ```powershell

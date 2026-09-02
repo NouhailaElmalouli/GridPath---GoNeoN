@@ -77,10 +77,13 @@ button, input, textarea { font: inherit; }
   color: #05090a;
   background: #25f4d0;
   font-weight: 800;
-  cursor: not-allowed;
-  opacity: 0.72;
+  cursor: pointer;
 }
+.agent-panel button:disabled { cursor: not-allowed; opacity: 0.72; }
 .agent-panel button span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+.result-card details { margin-top: 12px; color: #aab4c1; font-size: 11px; }
+.result-card summary { cursor: pointer; color: #25f4d0; }
+.result-card ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.65; }
 .disclaimer { margin-top: auto; color: #5f6876; font-size: 10px; line-height: 1.5; }
 
 .map-stage { position: relative; min-width: 0; background: #10151a; }

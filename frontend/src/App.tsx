@@ -17,6 +17,19 @@ type Scenario = {
   };
   layers: GeoJSON.FeatureCollection;
 };
+type Plan = {
+  feasible: boolean;
+  centreline: GeoJSON.Geometry;
+  right_of_way: GeoJSON.Geometry;
+  hard_exclusion_envelope: GeoJSON.Geometry;
+  route_length_m: number;
+  detour_ratio: number;
+  minimum_building_clearance_m: number;
+  environmental_sensitivity_overlap_m2: number;
+  water_crossing_count: number;
+  validation_checks: { passed: boolean }[];
+  calculation_trace: string[];
+};
 
 const apiBaseUrl = "http://localhost:8000";
 const layerLabels: Record<string, string> = {
@@ -40,6 +53,11 @@ function App() {
   const [mapReady, setMapReady] = useState(false);
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [clearance, setClearance] = useState(25);
+  const [rightOfWayWidth, setRightOfWayWidth] = useState(40);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({
     buildings: true,
     statutory_protected: true,
@@ -123,7 +141,36 @@ function App() {
     }
   }, [scenario, visibleLayers]);
 
+  useEffect(() => {
+    if (!map.current || !plan) return;
+    const instance = map.current;
+    const sourceId = "gridpath-plan";
+    if (instance.getLayer("plan-centreline")) instance.removeLayer("plan-centreline");
+    if (instance.getLayer("plan-right-of-way")) instance.removeLayer("plan-right-of-way");
+    if (instance.getLayer("plan-exclusions")) instance.removeLayer("plan-exclusions");
+    if (instance.getSource(sourceId)) instance.removeSource(sourceId);
+    instance.addSource(sourceId, { type: "geojson", data: { type: "FeatureCollection", features: [
+      { type: "Feature", properties: { kind: "right_of_way" }, geometry: plan.right_of_way },
+      { type: "Feature", properties: { kind: "exclusions" }, geometry: plan.hard_exclusion_envelope },
+      { type: "Feature", properties: { kind: "centreline" }, geometry: plan.centreline },
+    ] } });
+    instance.addLayer({ id: "plan-exclusions", type: "fill", source: sourceId, filter: ["==", ["get", "kind"], "exclusions"], paint: { "fill-color": "#f4d35e", "fill-opacity": 0.14 } });
+    instance.addLayer({ id: "plan-right-of-way", type: "fill", source: sourceId, filter: ["==", ["get", "kind"], "right_of_way"], paint: { "fill-color": "#25f4d0", "fill-opacity": 0.28, "fill-outline-color": "#25f4d0" } });
+    instance.addLayer({ id: "plan-centreline", type: "line", source: sourceId, filter: ["==", ["get", "kind"], "centreline"], paint: { "line-color": "#ffffff", "line-width": 4, "line-blur": 0.2 } } as maplibregl.LineLayerSpecification);
+  }, [plan]);
+
   const toggleLayer = (layerName: string) => setVisibleLayers((current) => ({ ...current, [layerName]: !current[layerName] }));
+  const generatePlan = async () => {
+    if (!scenario || planning) return;
+    setPlanning(true); setPlanError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/plan`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario_id: "zurich-dietikon-urdorf-v1", building_clearance_m: clearance, right_of_way_width_m: rightOfWayWidth, strategy: "balanced" }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail?.message ?? "Planning request failed");
+      setPlan(body as Plan);
+    } catch (requestError) { setPlanError(requestError instanceof Error ? requestError.message : "Planning request failed"); }
+    finally { setPlanning(false); }
+  };
 
   return (
     <main className="app-shell">
@@ -138,6 +185,10 @@ function App() {
             <div className="message"><strong>{scenario.metadata.scenario_name}</strong><br />{scenario.metadata.selected_location}</div>
             <div className="constraint-card"><span>Prepared layers</span><dl>{Object.entries(layerLabels).map(([name, label]) => <div key={name}><dt><label><input type="checkbox" checked={visibleLayers[name]} onChange={() => toggleLayer(name)} disabled={scenario.metadata.layer_counts[name] === 0} /> {label}</label></dt><dd>{scenario.metadata.layer_counts[name]}</dd></div>)}</dl></div>
             <div className="constraint-card"><span>Endpoints</span><dl><div><dt>Grid connection</dt><dd>Synthetic</dd></div><div><dt>Proposed development</dt><dd>Synthetic</dd></div></dl></div>
+            <div className="constraint-card"><span>Engineering assumptions</span><label>Building clearance <input type="number" min="10" max="60" value={clearance} onChange={(event) => setClearance(Number(event.target.value))} /> m</label><label>Right-of-way width <input type="number" min="20" max="80" value={rightOfWayWidth} onChange={(event) => setRightOfWayWidth(Number(event.target.value))} /> m</label></div>
+            <button type="button" onClick={generatePlan} disabled={planning}>{planning ? "Calculating balanced alignment…" : "Generate balanced alignment"}<span>5 m grid</span></button>
+            {planError ? <div className="message error-message">{planError}</div> : null}
+            {plan ? <div className="constraint-card result-card"><span>{plan.feasible ? "Validated alignment" : "Invalid alignment"}</span><dl><div><dt>Length</dt><dd>{plan.route_length_m} m</dd></div><div><dt>Detour ratio</dt><dd>{plan.detour_ratio}</dd></div><div><dt>Clearance</dt><dd>{plan.minimum_building_clearance_m} m</dd></div><div><dt>Environmental overlap</dt><dd>{plan.environmental_sensitivity_overlap_m2} m²</dd></div><div><dt>Water crossings</dt><dd>{plan.water_crossing_count}</dd></div></dl><details><summary>Calculation trace</summary><ol>{plan.calculation_trace.map((step) => <li key={step}>{step}</li>)}</ol></details></div> : null}
             <p className="source-note">{scenario.metadata.source}<br />Retrieved {scenario.metadata.retrieved_at}</p>
             <p className="disclaimer">{scenario.metadata.disclaimer}</p>
           </>}

@@ -118,7 +118,7 @@ def geojson_features(layers: dict[str, gpd.GeoDataFrame], study_area: object) ->
             result.append({"type": "Feature", "properties": _properties(index, row, layer), "geometry": mapping(row.geometry)})
     endpoints = [
         ("grid_connection", "Representative grid connection", (8.4086, 47.3948), "synthetic"),
-        ("proposed_development", "Proposed development", (8.4204, 47.4001), "synthetic"),
+        ("proposed_development", "Proposed development", (8.415859, 47.391835), "synthetic"),
     ]
     for endpoint_id, label, coordinates, provenance in endpoints:
         result.append({"type": "Feature", "properties": {"layer": "endpoints", "endpoint_id": endpoint_id, "label": label, "provenance": provenance, "source": "GridPath synthetic demonstrative endpoint"}, "geometry": mapping(Point(coordinates))})
@@ -147,7 +147,7 @@ def build_manifest(bounds: tuple[float, float, float, float], layers: dict[str, 
         "disclaimer": "Planning prototype only. Not a regulatory-compliance determination or construction-ready alignment.",
         "endpoints": [
             {"id": "grid_connection", "label": "Representative grid connection", "coordinates": [8.4086, 47.3948], "provenance": "synthetic"},
-            {"id": "proposed_development", "label": "Proposed development", "coordinates": [8.4204, 47.4001], "provenance": "synthetic"},
+            {"id": "proposed_development", "label": "Proposed development", "coordinates": [8.415859, 47.391835], "provenance": "synthetic"},
         ],
     }
 

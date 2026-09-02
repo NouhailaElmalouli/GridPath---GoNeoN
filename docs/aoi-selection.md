@@ -23,6 +23,12 @@ No `power=substation` was returned in the selected AOI, so the grid connection
 is explicitly synthetic and labelled as such. The proposed-development endpoint
 is also synthetic and represents no actual project.
 
+During the Phase 2 endpoint validation, the original synthetic proposed-
+development point was found to overlap a mapped water feature. It was moved
+approximately 30 m to a nearby open, routable synthetic point through the
+offline preparation script, then the canonical scenario and manifest were
+regenerated. No mapped OSM feature was changed.
+
 ## Data limitations
 
 No `boundary=protected_area` or `leisure=nature_reserve` feature was mapped in

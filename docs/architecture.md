@@ -37,8 +37,8 @@ degrees.
 - `scenario_repository.py`: load and validate prepared layers.
 - `cost_surface.py`: rasterize hard exclusions and soft penalties for free-space
   power-line alignment.
-- `routing.py`: run A* and alternative strategies.
-- `validation.py`: calculate right-of-way intersections and minimum settlement clearances.
+- `planning.py`: construct a 5 m metric cost grid, run deterministic balanced
+  A*, safely shortcut the cell path, generate the right-of-way, and validate it.
 - `scoring.py`: rank alternatives from explicit weights.
 - `agent.py`: parse intent, orchestrate tools, and explain results.
 
@@ -49,6 +49,7 @@ degrees.
 - `POST /api/plan`
 - `POST /api/interpret`
 
-The initial scenario pass includes the health endpoint and local-file-backed
-scenario endpoint. It does not include routing, scoring, right-of-way validation,
-or agent orchestration.
+The current pass includes one balanced route only. Buildings and statutory
+protected areas are hard exclusions. Environmental sensitivity, water, and
+building proximity outside the hard envelope are deterministic soft costs.
+No alternative ranking or agent orchestration is implemented.
