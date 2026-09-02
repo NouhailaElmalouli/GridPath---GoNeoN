@@ -1,11 +1,12 @@
-# Agentic Corridor Planner
+# GridPath
 
-A visual planning MVP that generates and validates alternative underground
-utility corridors across a prepared Zürich scenario.
+**Agentic power-line alignment and right-of-way screening**
 
-The system combines an agent-facing workflow with deterministic geospatial
-calculation: AI interprets intent and explains trade-offs, while Shapely,
-GeoPandas, and A* generate and validate the spatial result.
+GridPath is an early-stage feasibility planning prototype for overhead power-transmission alignments in one prepared peri-urban Zurich-region study area. It compares candidate alignments between a representative grid connection point and an explicitly synthetic proposed development.
+
+AI interprets the planner's intent and orchestrates the workflow; deterministic spatial functions generate, measure, validate, and score every result.
+
+GridPath is an adjacent platform-extension concept created for this exercise, not an official goNEON product. It differs from goNEON Corridor Studies, which uses existing street networks to evaluate cycling-route variants and road-design consequences. GridPath instead evaluates free-space territorial alignment and right-of-way, environmental, and settlement constraints for power transmission.
 
 ## Repository structure
 
@@ -20,16 +21,14 @@ scripts/             Data preparation and local development helpers
 
 ## Prerequisites
 
-- Python 3.11 or 3.12
+- Python 3.12
 - Node.js 20+
 - Git
 
 ## Windows setup
 
-Open PowerShell in the repository folder:
-
 ```powershell
-py -3.12 -m venv .venv
+python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -38,44 +37,26 @@ python -m pip install -e ".[dev]"
 cd ..\frontend
 npm install
 cd ..
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 ## Run locally
 
-Backend, from the repository root:
-
 ```powershell
+# Backend
 .\.venv\Scripts\Activate.ps1
 cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-Frontend, in a second PowerShell window:
+In a second PowerShell window:
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Open <http://localhost:5173>. The API health endpoint is
-<http://localhost:8000/api/health>.
-
-## Connect to GitHub
-
-The starter is prepared as a Git repository on the `main` branch. If you are
-working from the downloaded archive, initialize it and connect the empty GitHub
-repository you create for the exercise:
-
-```powershell
-git init -b main
-git add .
-git commit -m "chore: scaffold agentic corridor planner"
-git remote add origin YOUR_REPOSITORY_URL
-git push -u origin main
-```
-
-Do not commit `.env`, API keys, `.venv`, `node_modules`, or raw data downloads.
+Open <http://localhost:5173>. The API health endpoint is <http://localhost:8000/api/health>.
 
 ## Checks
 
@@ -91,9 +72,6 @@ npm run build
 
 ## Data policy
 
-The final demo will use a small, prepared Zürich dataset downloaded during
-development and committed only if licensing and file size allow it. Runtime
-requests must not depend on Overpass or municipal WFS availability.
+The final demo will use a small prepared Zurich-region dataset downloaded during development and committed only if licensing and file size allow it. Runtime requests must not depend on Overpass or municipal WFS availability.
 
-Planning prototype only. Results are not a substitute for statutory utility,
-environmental, or engineering review.
+Planning prototype only. Results are not regulatory-compliance determinations, construction-ready alignments, or a substitute for statutory, environmental, land-rights, or engineering review.

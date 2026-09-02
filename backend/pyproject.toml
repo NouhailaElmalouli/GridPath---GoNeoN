@@ -3,9 +3,9 @@ requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentic-corridor-api"
+name = "gridpath-api"
 version = "0.1.0"
-description = "Deterministic spatial backend for the agentic corridor planner"
+description = "Deterministic spatial backend for GridPath power-line screening"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -41,4 +41,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-

@@ -1,11 +1,11 @@
 {
   "folders": [
-    { "name": "Corridor Planner", "path": "." },
+    { "name": "GridPath", "path": "." },
     { "name": "Backend", "path": "backend" },
     { "name": "Frontend", "path": "frontend" }
   ],
   "settings": {
-    "python.defaultInterpreterPath": "${workspaceFolder:Corridor Planner}/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder:GridPath}/.venv/Scripts/python.exe",
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": ["backend/tests"],
     "editor.formatOnSave": true,
@@ -16,4 +16,3 @@
     }
   }
 }
-

@@ -1,4 +1,10 @@
-# Technical Architecture
+# GridPath Technical Architecture
+
+GridPath is a planning-prototype extension concept, not an official goNEON
+product. goNEON Corridor Studies performs cycling routing over an existing
+lane-level street network; GridPath evaluates free-space territorial alignment
+and right-of-way constraints for overhead power transmission. Outputs are not
+regulatory-compliance determinations or construction-ready designs.
 
 ```text
 React + MapLibre
@@ -29,9 +35,10 @@ degrees.
 ## Proposed backend modules
 
 - `scenario_repository.py`: load and validate prepared layers.
-- `cost_surface.py`: rasterize hard exclusions and soft penalties.
+- `cost_surface.py`: rasterize hard exclusions and soft penalties for free-space
+  power-line alignment.
 - `routing.py`: run A* and alternative strategies.
-- `validation.py`: calculate vector intersections and minimum clearances.
+- `validation.py`: calculate right-of-way intersections and minimum settlement clearances.
 - `scoring.py`: rank alternatives from explicit weights.
 - `agent.py`: parse intent, orchestrate tools, and explain results.
 
@@ -43,4 +50,3 @@ degrees.
 - `POST /api/interpret`
 
 Only the health endpoint is included in the initial scaffold.
-

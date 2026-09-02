@@ -1,5 +1,5 @@
 {
-  "name": "agentic-corridor-ui",
+  "name": "gridpath-ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -28,4 +28,3 @@
     "vite": "^7.1.3"
   }
 }
-

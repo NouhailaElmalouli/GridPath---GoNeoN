@@ -9,7 +9,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Deterministic geospatial planning API for a visual corridor MVP.",
+    description="Deterministic geospatial planning API for GridPath power-line screening.",
 )
 
 app.add_middleware(
@@ -21,4 +21,3 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix="/api")
-

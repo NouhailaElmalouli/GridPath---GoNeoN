@@ -1,8 +1,8 @@
-# Wednesday Build Plan
+# GridPath Build Plan
 
 ## Before coding
 
-- Open `corridor-planner.code-workspace` in VS Code.
+- Open the GridPath workspace in VS Code.
 - Create and activate `.venv` using the README commands.
 - Install backend and frontend dependencies.
 - Copy `.env.example` to `.env`.
@@ -12,7 +12,7 @@
 
 1. Inspect a few 1–2 km² Zürich AOIs for useful building, water, and green-area
    coverage.
-2. Lock one AOI and the two demonstrative endpoints.
+2. Lock one AOI, a representative grid connection, and a synthetic proposed-development endpoint.
 3. Implement `scripts/fetch_zurich_data.py`.
 4. Normalize the source data into explicit GeoJSON layers.
 5. Define typed scenario models and `GET /api/scenario`.
@@ -26,7 +26,8 @@ without a live Overpass request.
 2. Build hard-exclusion buffers with Shapely.
 3. Rasterize the AOI into a controlled-resolution grid.
 4. Implement deterministic A*.
-5. Convert the cell path to a LineString and validate it again as vector data.
+5. Convert the cell path to a LineString, apply the configurable right-of-way buffer,
+   and validate both again as vector data.
 6. Add unit tests for an open path, blocked path, and clearance violation.
 
 **Exit condition:** `POST /api/plan` returns one valid route with length,
@@ -53,4 +54,3 @@ works end to end.
 > operations in EPSG:2056 and all browser exchange geometry in EPSG:4326. Do
 > not implement routing or agent behavior yet. Validate backend lint/tests and
 > frontend lint/build when done.
-

@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Agentic Corridor Planner API"
+    app_name: str = "GridPath API"
     allowed_origins: str = "http://localhost:5173"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5-mini"
@@ -23,4 +23,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
