@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -35,3 +37,28 @@ def test_alternatives_reports_all_profiles_and_convergence() -> None:
     ]
     assert all(alternative["feasible"] for alternative in alternatives)
     assert response.json()["distinctness"]["shortest:balanced"]["hausdorff_distance_m"] == 0
+
+
+def test_frontend_default_alternatives_payload_is_finite_wgs84_json() -> None:
+    payload = {
+        "scenario_id": "zurich-dietikon-urdorf-v1",
+        "building_clearance_m": 25,
+        "right_of_way_width_m": 40,
+        "strategy": "balanced",
+    }
+    response = TestClient(app).post("/api/plan/alternatives", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    json.dumps(body, allow_nan=False)
+    assert [alternative["strategy"] for alternative in body["alternatives"]] == [
+        "shortest",
+        "environmental",
+        "balanced",
+    ]
+    for alternative in body["alternatives"]:
+        assert alternative["converged_with"]
+        for geometry_name in ("centreline", "right_of_way", "hard_exclusion_envelope"):
+            geometry = alternative[geometry_name]
+            assert geometry["type"] in {"LineString", "Polygon", "MultiPolygon"}
+            coordinates = json.dumps(geometry["coordinates"])
+            assert "NaN" not in coordinates and "Infinity" not in coordinates

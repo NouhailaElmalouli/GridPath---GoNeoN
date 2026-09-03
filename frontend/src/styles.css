@@ -38,12 +38,19 @@ button, input, textarea { font: inherit; }
   z-index: 2;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
   gap: 18px;
   padding: 28px;
   border-right: 1px solid #252934;
   background: #090c12;
   box-shadow: 16px 0 50px rgba(0, 0, 0, 0.26);
 }
+
+.agent-panel::-webkit-scrollbar { width: 10px; }
+.agent-panel::-webkit-scrollbar-track { background: #090c12; }
+.agent-panel::-webkit-scrollbar-thumb { background: #2b3542; border: 3px solid #090c12; border-radius: 999px; }
+.agent-panel::-webkit-scrollbar-thumb:hover { background: #3e5265; }
 
 .agent-heading { display: flex; align-items: center; gap: 13px; }
 .agent-mark { display: grid; place-items: center; width: 43px; height: 43px; border: 1px solid #25f4d0; color: #25f4d0; font-weight: 850; }
@@ -93,6 +100,8 @@ button, input, textarea { font: inherit; }
 .map-stage { position: relative; min-width: 0; background: #10151a; }
 .map { position: absolute; inset: 0; }
 .map::after { content: ""; pointer-events: none; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(7, 9, 13, 0.18), transparent 30%); }
+.focus-route { position: absolute; z-index: 3; top: 20px; left: 20px; border: 1px solid #25f4d0; padding: 10px 13px; color: #dffef8; background: rgba(7, 14, 18, 0.92); font-size: 12px; font-weight: 750; cursor: pointer; }
+.focus-route:hover { background: #12322f; }
 
 .legend {
   position: absolute;
@@ -122,6 +131,6 @@ button, input, textarea { font: inherit; }
 @media (max-width: 760px) {
   body { overflow: auto; }
   .workspace { grid-template-columns: 1fr; grid-template-rows: auto 60vh; height: auto; }
-  .agent-panel { border-right: 0; border-bottom: 1px solid #252934; }
+  .agent-panel { min-height: auto; overflow-y: visible; border-right: 0; border-bottom: 1px solid #252934; }
   .map-stage { min-height: 60vh; }
 }
