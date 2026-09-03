@@ -57,8 +57,9 @@ def test_manifest_contract_and_local_scenario_response() -> None:
         "statutory_protected",
         "environmental_sensitivity",
         "water",
-        "power_assets",
-        "endpoints",
+            "power_assets",
+            "road_network",
+            "endpoints",
     }
     assert all(feature["properties"]["layer"] for feature in response.layers["features"])
 

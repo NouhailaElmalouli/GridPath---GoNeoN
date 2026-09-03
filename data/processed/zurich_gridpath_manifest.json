@@ -9,7 +9,7 @@
     "north": 47.40246290667357
   },
   "source": "OpenStreetMap via OSMnx / Overpass",
-  "retrieved_at": "2026-09-02",
+  "retrieved_at": "2026-09-03",
   "source_crs": "EPSG:4326",
   "analysis_crs": "EPSG:2056",
   "layer_counts": {
@@ -19,6 +19,7 @@
     "environmental_sensitivity": 36,
     "water": 21,
     "power_assets": 0,
+    "road_network": 715,
     "endpoints": 2
   },
   "statutory_protected_present": false,
@@ -26,7 +27,8 @@
     "OpenStreetMap coverage is volunteered and may be incomplete or outdated.",
     "No statutory protected-area feature was mapped in this prepared study area.",
     "Forest, park, wetland, and water features are environmental-sensitivity proxies, not statutory determinations.",
-    "Both endpoints are synthetic demonstrative locations; no proposed project is implied."
+    "Both endpoints are synthetic demonstrative locations; no proposed project is implied.",
+    "Mapped streets are preliminary accessible routing corridors, not verified utility easements or proof of public ownership."
   ],
   "disclaimer": "Planning prototype only. Not a regulatory-compliance determination or construction-ready alignment.",
   "endpoints": [

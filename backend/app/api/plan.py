@@ -23,7 +23,7 @@ def create_plan(
             detail={
                 "code": error.code,
                 "message": error.message,
-                "assumptions": error.assumptions,
+                "measurements": error.assumptions,
                 "suggestions": ["Reduce building clearance or right-of-way width if appropriate."],
             },
         ) from error
@@ -40,5 +40,9 @@ def create_alternatives(
     except PlanningError as error:
         raise HTTPException(
             status_code=422,
-            detail={"code": error.code, "message": error.message},
+            detail={
+                "code": error.code,
+                "message": error.message,
+                "measurements": error.assumptions,
+            },
         ) from error

@@ -14,6 +14,7 @@ LAYER_NAMES = {
     "environmental_sensitivity",
     "water",
     "power_assets",
+    "road_network",
     "endpoints",
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

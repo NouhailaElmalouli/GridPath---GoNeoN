@@ -66,6 +66,19 @@ button, input, textarea { font: inherit; }
 }
 
 .message { border-left: 3px solid #ff3ca6; }
+.connection-card { border: 1px solid #31515a; background: #0c151d; padding: 14px; font-size: 12px; line-height: 1.45; }
+.connection-card > span { color: #25f4d0; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.1em; }
+.connection-card p { margin: 8px 0 11px; color: #a6b4c1; }
+.endpoint-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.agent-panel .endpoint-actions button { display: block; padding: 9px 10px; color: #dbe7ee; background: #14222d; border: 1px solid #334a5a; font-size: 10px; text-align: left; }
+.agent-panel .endpoint-actions button:first-child { color: #061012; background: #25f4d0; border-color: #25f4d0; }
+.agent-panel .endpoint-actions button:last-child { grid-column: span 2; color: #9fadb9; background: transparent; }
+.connection-card dl { margin: 11px 0 0; }
+.connection-card dl div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-top: 1px solid #273846; }
+.connection-card dt { color: #8190a0; }.connection-card dd { margin: 0; text-align: right; }
+.distance-error, .endpoint-error { color: #ff6575; font-weight: 800; }
+.endpoint-error, .placement-message { margin-top: 10px; padding: 8px 9px; border-left: 2px solid #25f4d0; color: #c8d5df; background: rgba(37, 244, 208, 0.07); font-size: 11px; }
+.endpoint-error { border-left-color: #ff5268; background: rgba(255, 82, 104, 0.08); }
 .constraint-card > span { color: #25f4d0; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.1em; }
 .constraint-card dl { margin: 13px 0 0; }
 .constraint-card dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #252b35; }
@@ -73,6 +86,10 @@ button, input, textarea { font: inherit; }
 .constraint-card dd { margin: 0; text-align: right; }
 .constraint-card label { cursor: pointer; }
 .constraint-card input { accent-color: #25f4d0; vertical-align: middle; }
+.assumption-fields { display: grid; gap: 10px; margin-top: 12px; }
+.assumption-fields label { display: grid; grid-template-columns: 1fr 62px 14px; align-items: center; gap: 7px; color: #aab4c1; font-size: 12px; }
+.assumption-fields input { width: 62px; padding: 5px 4px; border: 1px solid #394657; color: #e7edf3; background: #090d13; text-align: right; }
+.assumption-fields em { color: #7f8998; font-style: normal; }
 .source-note { margin: 0; color: #8792a1; font-size: 11px; line-height: 1.5; }
 .error-message { border-left-color: #ff5252; }
 
@@ -91,10 +108,16 @@ button, input, textarea { font: inherit; }
 .result-card details { margin-top: 12px; color: #aab4c1; font-size: 11px; }
 .result-card summary { cursor: pointer; color: #25f4d0; }
 .result-card ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.65; }
-.comparison-cards { display: grid; gap: 8px; }
-.comparison-card { display: grid !important; gap: 4px; text-align: left; color: #dfe7ee !important; background: #111923 !important; border: 1px solid #2b3948 !important; padding: 11px !important; }
-.comparison-card.selected { border-color: #25f4d0 !important; box-shadow: inset 3px 0 #25f4d0; }
-.comparison-card span { color: #91a0af; font-size: 10px; }
+.comparison-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #25f4d0; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.08em; }
+.comparison-heading small { color: #718093; font-size: 9px; font-weight: 600; letter-spacing: 0; text-transform: none; text-align: right; }
+.comparison-cards { display: grid; gap: 7px; }
+.agent-panel .comparison-card { display: grid; gap: 4px; justify-content: start; text-align: left; color: #dfe7ee; background: #111923; border: 1px solid #2b3948; padding: 10px 11px; font-weight: 500; }
+.comparison-card:hover { background: #152130; }
+.comparison-card.selected { border-color: #25f4d0; box-shadow: inset 3px 0 #25f4d0; }
+.comparison-card strong { font-size: 12px; }
+.comparison-card span, .comparison-card small { color: #a8b3c0; font-size: 10px; line-height: 1.35; }
+.comparison-card small { color: #748397; }
+.route-note { margin: 12px 0 0; color: #aab4c1; font-size: 11px; line-height: 1.5; }
 .disclaimer { margin-top: auto; color: #5f6876; font-size: 10px; line-height: 1.5; }
 
 .map-stage { position: relative; min-width: 0; background: #10151a; }
@@ -102,6 +125,13 @@ button, input, textarea { font: inherit; }
 .map::after { content: ""; pointer-events: none; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(7, 9, 13, 0.18), transparent 30%); }
 .focus-route { position: absolute; z-index: 3; top: 20px; left: 20px; border: 1px solid #25f4d0; padding: 10px 13px; color: #dffef8; background: rgba(7, 14, 18, 0.92); font-size: 12px; font-weight: 750; cursor: pointer; }
 .focus-route:hover { background: #12322f; }
+.map-view-controls { position: absolute; z-index: 3; top: 20px; left: 20px; display: grid; gap: 7px; }
+.map-view-controls + .focus-route { top: 98px; }
+.view-toggle { display: inline-flex; width: max-content; overflow: hidden; border: 1px solid #33404d; background: rgba(7, 14, 18, 0.92); }
+.view-toggle button { border: 0; padding: 8px 11px; color: #aab6c3; background: transparent; font-size: 11px; font-weight: 800; cursor: pointer; }
+.view-toggle button.active { color: #061012; background: #25f4d0; }
+.massing-label { max-width: 230px; padding: 7px 9px; border: 1px solid #2b3948; color: #b9c4d0; background: rgba(7, 14, 18, 0.88); font-size: 10px; line-height: 1.45; }
+.massing-label small { color: #7f8c9a; font-size: 9px; }
 
 .legend {
   position: absolute;
@@ -127,6 +157,10 @@ button, input, textarea { font: inherit; }
 .legend .environment { border-radius: 1px; background: #4eaa67; }
 .legend .water { border-radius: 1px; background: #3b9fe2; }
 .legend .protected { border-radius: 1px; background: #ec3ba6; }
+.legend .route-shortest, .legend .route-environment, .legend .route-constructability { width: 17px; height: 4px; border-radius: 0; background: currentColor; box-shadow: 0 0 0 2px #03080a; }
+.legend .route-shortest { color: #22e7f0; }
+.legend .route-environment { color: #49e36e; }
+.legend .route-constructability { color: #f044b7; }
 
 @media (max-width: 760px) {
   body { overflow: auto; }

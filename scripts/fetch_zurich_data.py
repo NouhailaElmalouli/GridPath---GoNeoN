@@ -22,6 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 SCENARIO_PATH = PROCESSED_DIR / "zurich_gridpath_scenario.geojson"
 MANIFEST_PATH = PROCESSED_DIR / "zurich_gridpath_manifest.json"
+ROADS_PATH = PROCESSED_DIR / "zurich_gridpath_roads.json"
 ANALYSIS_CRS = "EPSG:2056"
 EXCHANGE_CRS = "EPSG:4326"
 SCENARIO_ID = "zurich-dietikon-urdorf-v1"
@@ -36,6 +37,7 @@ TAGS: dict[str, Any] = {
     "natural": ["wood", "water", "wetland"],
     "waterway": True,
 }
+PEDESTRIAN_ONLY_HIGHWAYS = {"footway", "path", "steps", "pedestrian", "bridleway", "corridor"}
 
 
 def study_area_geometry() -> tuple[object, tuple[float, float, float, float]]:
@@ -111,11 +113,59 @@ def _properties(index: object, row: Any, layer: str) -> dict[str, str]:
     return properties
 
 
-def geojson_features(layers: dict[str, gpd.GeoDataFrame], study_area: object) -> list[dict[str, Any]]:
+def _tag_value(value: Any) -> str:
+    if isinstance(value, list):
+        return ";".join(str(item) for item in value)
+    return "" if value is None or pd.isna(value) else str(value)
+
+
+def prepare_roads(study_area: object) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Persist a deterministic, routable OSM street graph for offline use."""
+    graph = ox.graph_from_point(CENTRE, dist=750, network_type="all")
+    metric_area = gpd.GeoSeries([study_area], crs=EXCHANGE_CRS).to_crs(ANALYSIS_CRS).iloc[0]
+    nodes: dict[str, dict[str, float]] = {}
+    edges: list[dict[str, Any]] = []
+    street_features: list[dict[str, Any]] = []
+    for source, target, key, data in graph.edges(keys=True, data=True):
+        highway = _tag_value(data.get("highway"))
+        if highway in PEDESTRIAN_ONLY_HIGHWAYS:
+            continue
+        geometry = data.get("geometry")
+        if geometry is None:
+            geometry = gpd.GeoSeries(
+                [Point(graph.nodes[source]["x"], graph.nodes[source]["y"]), Point(graph.nodes[target]["x"], graph.nodes[target]["y"])]
+            ).unary_union
+        if geometry.geom_type == "MultiPoint":
+            geometry = gpd.GeoSeries([geometry]).unary_union.convex_hull
+        metric_geometry = gpd.GeoSeries([geometry], crs=EXCHANGE_CRS).to_crs(ANALYSIS_CRS).iloc[0]
+        if not metric_area.buffer(5).covers(metric_geometry):
+            continue
+        edge_id = f"{source}:{target}:{key}"
+        properties = {
+            "layer": "road_network",
+            "edge_id": edge_id,
+            "source": str(source),
+            "target": str(target),
+            "osm_id": _tag_value(data.get("osmid")),
+            "highway": highway,
+            "access": _tag_value(data.get("access")),
+            "bridge": _tag_value(data.get("bridge")),
+            "tunnel": _tag_value(data.get("tunnel")),
+            "length_m": round(float(data.get("length", metric_geometry.length)), 2),
+        }
+        edges.append({**properties, "geometry": mapping(geometry)})
+        street_features.append({"type": "Feature", "properties": properties, "geometry": mapping(geometry)})
+        for node in (source, target):
+            nodes[str(node)] = {"longitude": graph.nodes[node]["x"], "latitude": graph.nodes[node]["y"]}
+    return street_features, {"source": "OpenStreetMap street network via OSMnx / Overpass", "retrieved_at": datetime.now(UTC).date().isoformat(), "nodes": nodes, "edges": edges}
+
+
+def geojson_features(layers: dict[str, gpd.GeoDataFrame], study_area: object, street_features: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     result = [{"type": "Feature", "properties": {"layer": "study_area", "source": "GridPath prepared study area"}, "geometry": mapping(study_area)}]
     for layer, frame in layers.items():
         for index, row in frame.to_crs(EXCHANGE_CRS).iterrows():
             result.append({"type": "Feature", "properties": _properties(index, row, layer), "geometry": mapping(row.geometry)})
+    result.extend(street_features or [])
     endpoints = [
         ("grid_connection", "Representative grid connection", (8.4086, 47.3948), "synthetic"),
         ("proposed_development", "Proposed development", (8.415859, 47.391835), "synthetic"),
@@ -125,8 +175,8 @@ def geojson_features(layers: dict[str, gpd.GeoDataFrame], study_area: object) ->
     return result
 
 
-def build_manifest(bounds: tuple[float, float, float, float], layers: dict[str, gpd.GeoDataFrame], retrieved_at: str) -> dict[str, Any]:
-    counts = {"study_area": 1, **{name: len(frame) for name, frame in layers.items()}, "endpoints": 2}
+def build_manifest(bounds: tuple[float, float, float, float], layers: dict[str, gpd.GeoDataFrame], street_features: list[dict[str, Any]], retrieved_at: str) -> dict[str, Any]:
+    counts = {"study_area": 1, **{name: len(frame) for name, frame in layers.items()}, "street_network": len(street_features), "endpoints": 2}
     return {
         "scenario_id": SCENARIO_ID,
         "scenario_name": "Dietikon/Urdorf peri-urban GridPath study area",
@@ -143,6 +193,7 @@ def build_manifest(bounds: tuple[float, float, float, float], layers: dict[str, 
             "No statutory protected-area feature was mapped in this prepared study area." if counts["statutory_protected"] == 0 else "Mapped protected-area tags are not an official environmental register.",
             "Forest, park, wetland, and water features are environmental-sensitivity proxies, not statutory determinations.",
             "Both endpoints are synthetic demonstrative locations; no proposed project is implied.",
+            "Mapped streets are preliminary accessible routing corridors, not verified utility easements or proof of public ownership.",
         ],
         "disclaimer": "Planning prototype only. Not a regulatory-compliance determination or construction-ready alignment.",
         "endpoints": [
@@ -160,10 +211,12 @@ def main() -> None:
     raw_features = ox.features_from_point(CENTRE, tags=TAGS, dist=HALF_SIZE_M)
     layers = classify_features(raw_features, study_area)
     retrieved_at = datetime.now(UTC).date().isoformat()
-    scenario = {"type": "FeatureCollection", "features": geojson_features(layers, study_area)}
-    manifest = build_manifest(bounds, layers, retrieved_at)
+    street_features, roads = prepare_roads(study_area)
+    scenario = {"type": "FeatureCollection", "features": geojson_features(layers, study_area, street_features)}
+    manifest = build_manifest(bounds, layers, street_features, retrieved_at)
     SCENARIO_PATH.write_text(json.dumps(scenario, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     MANIFEST_PATH.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    ROADS_PATH.write_text(json.dumps(roads, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(json.dumps(manifest["layer_counts"], indent=2))
 
 

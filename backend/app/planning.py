@@ -1,4 +1,5 @@
 """Deterministic 5 m balanced-alignment planner for the prepared scenario."""
+# ruff: noqa: E501, E701
 
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ METRIC_TO_WGS84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 
 
 class PlanningError(Exception):
-    def __init__(self, code: str, message: str, assumptions: dict[str, float]) -> None:
+    def __init__(self, code: str, message: str, assumptions: dict[str, Any]) -> None:
         self.code, self.message, self.assumptions = code, message, assumptions
         super().__init__(message)
 
@@ -270,7 +271,9 @@ def validation_checks(
     ]
 
 
-def plan(scenario_id: str, features: list[dict[str, Any]], request: PlanRequest) -> PlanResponse:
+def grid_plan_legacy(
+    scenario_id: str, features: list[dict[str, Any]], request: PlanRequest
+) -> PlanResponse:
     if request.scenario_id != scenario_id:
         raise PlanningError(
             "unknown_scenario",
@@ -351,34 +354,177 @@ def plan(scenario_id: str, features: list[dict[str, Any]], request: PlanRequest)
 def alternatives(
     scenario_id: str, features: list[dict[str, Any]], request: PlanRequest
 ) -> AlternativesResponse:
-    started = time.perf_counter()
-    plans = [
-        plan(scenario_id, features, request.model_copy(update={"strategy": strategy}))
-        for strategy in ("shortest", "environmental", "balanced")
+    """Return three route choices over the physical, direction-independent street graph."""
+    from app.endpoint_selection import resolve_endpoints, response_endpoint_fields
+    from app.road_graph import load_road_edges
+    from app.road_graph import metric as to_metric
+    from app.route_candidates import candidate_pool, edge_cost
+    from app.route_metrics import line_from_edges, metrics, shared_edge_percentage
+
+    if request.scenario_id != scenario_id:
+        raise PlanningError("unknown_scenario", "The requested scenario ID does not match the prepared scenario.", {})
+    buildings = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "buildings"])
+    environmental = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "environmental_sensitivity"])
+    water = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "water"])
+    edges = load_road_edges(features)
+    endpoint_selection = resolve_endpoints(features, request, edges)
+    endpoints = endpoint_selection.points
+    start_id, end_id = endpoint_selection.snapped_nodes["grid_connection"], endpoint_selection.snapped_nodes["proposed_development"]
+    start, end = endpoint_selection.snapped_points["grid_connection"], endpoint_selection.snapped_points["proposed_development"]
+    start_distance, end_distance = endpoint_selection.connector_distances_m["grid_connection"], endpoint_selection.connector_distances_m["proposed_development"]
+    edges = endpoint_selection.routing_edges
+    candidates = candidate_pool(edges, start_id, end_id, environmental, water)
+    if not candidates:
+        raise PlanningError("no_path", "No eligible mapped road corridor connects snapped endpoints.", {})
+
+    evaluated: list[dict[str, Any]] = []
+    for candidate in candidates:
+        line = line_from_edges(candidate.edges)
+        corridor = line.buffer(request.corridor_width_m / 2)
+        if corridor.intersects(buildings):
+            continue
+        values = metrics(candidate.edges, line, corridor, environmental, water)
+        evaluated.append({
+            "candidate": candidate,
+            "line": line,
+            "corridor": corridor,
+            "values": values,
+            "bridges": sum(edge.bridge for edge in candidate.edges),
+            "tunnels": sum(edge.tunnel for edge in candidate.edges),
+        })
+    if not evaluated:
+        raise PlanningError("no_path", "No validated mapped road corridor connects snapped endpoints.", {})
+
+    shortest = min(evaluated, key=lambda item: (item["values"]["length_m"], item["candidate"].rank))
+    shortest_length = float(shortest["values"]["length_m"])
+    environment = min(
+        evaluated,
+        key=lambda item: (
+            item["values"]["environmental_overlap_m2"],
+            item["values"]["water_crossings"],
+            item["values"]["length_m"],
+            item["candidate"].rank,
+        ),
+    )
+    constructability_pool = [
+        item for item in evaluated if item["values"]["length_m"] <= shortest_length * 1.25 + 0.1
     ]
+    constructability = min(
+        constructability_pool,
+        key=lambda item: (
+            item["tunnels"], item["bridges"], item["values"]["water_crossings"],
+            item["values"]["major_road_exposure_m"], item["values"]["turn_count"],
+            item["values"]["environmental_overlap_m2"], item["values"]["length_m"], item["candidate"].rank,
+        ),
+    )
+    selected = [("shortest", shortest["candidate"]), ("environmental", environment["candidate"]), ("constructability", constructability["candidate"])]
+    evaluation_by_rank = {item["candidate"].rank: item for item in evaluated}
+    environment_note = (
+        "Lowest measured environmental and water impact: "
+        f"{environment['values']['environmental_overlap_m2']} m² overlap and "
+        f"{environment['values']['water_crossings']} water crossings."
+        if environment is not shortest
+        else "No candidate improves the measured environmental or water impact "
+        f"({shortest['values']['environmental_overlap_m2']} m² overlap; "
+        f"{shortest['values']['water_crossings']} water crossings); shortest route also wins this criterion."
+    )
+    constructability_note = (
+        "Lowest construction-complexity profile within the 25% detour ceiling: "
+        f"{constructability['tunnels']} tunnels, {constructability['bridges']} bridges, "
+        f"{constructability['values']['water_crossings']} water crossings, and "
+        f"{constructability['values']['turn_count']} turns."
+        if constructability is not shortest
+        else "No route within the 25% detour ceiling improves the construction-complexity profile "
+        f"({shortest['tunnels']} tunnels, {shortest['bridges']} bridges, "
+        f"{shortest['values']['water_crossings']} water crossings, and "
+        f"{shortest['values']['turn_count']} turns); shortest route also wins this criterion."
+    )
+    strategy_notes = {
+        "shortest": f"Minimum total mapped-corridor length: {shortest_length} m.",
+        "environmental": environment_note,
+        "constructability": constructability_note,
+    }
+    limitation: str | None = None
+
+    scenario = prepare_scenario(features)
+    labels = {"shortest": "Shortest", "environmental": "Environment", "constructability": "Constructability"}
+    plans: list[PlanResponse] = []
+    for strategy, candidate in selected:
+        evaluation = evaluation_by_rank[candidate.rank]
+        line, corridor, values = evaluation["line"], evaluation["corridor"], evaluation["values"]
+        checks = [
+            check for check in validation_checks(scenario, line, corridor, request)
+            if check.id in {"building_intersection", "valid_geometry"}
+        ]
+        if not all(check.passed for check in checks):
+            raise PlanningError("vector_validation_failed", "A street-route alternative failed final vector validation.", {})
+        road_classes: dict[str, float] = {}
+        for edge in candidate.edges:
+            road_classes[edge.highway] = round(road_classes.get(edge.highway, 0) + edge.length_m, 1)
+        constructability_score = max(0.0, round(100 - values["major_road_exposure_m"] / 10 - values["bridge_tunnel_exposure_m"] / 5 - values["turn_count"] * 2, 1))
+        connectors = {
+            "type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"kind": "synthetic_connector", "endpoint_id": "grid_connection", "snapped_node_id": start_id, "distance_m": round(start_distance, 1)}, "geometry": _export(LineString([endpoints["grid_connection"], start]))},
+                {"type": "Feature", "properties": {"kind": "synthetic_connector", "endpoint_id": "proposed_development", "snapped_node_id": end_id, "distance_m": round(end_distance, 1)}, "geometry": _export(LineString([endpoints["proposed_development"], end]))},
+            ],
+        }
+        plans.append(PlanResponse(
+            plan_id=sha256(f"{scenario_id}|{strategy}|{'|'.join(edge.edge_id for edge in candidate.edges)}".encode()).hexdigest()[:16], strategy=strategy, display_name=labels[strategy], grid_resolution_m=0, computation_duration_ms=0, feasible=True,
+            centreline=_export(line), corridor=_export(corridor), right_of_way=_export(corridor), hard_exclusion_envelope={"type": "GeometryCollection", "geometries": []}, endpoint_connectors=connectors, endpoint_markers={"type": "FeatureCollection", "features": []},
+            raw_vertex_count=len(line.coords), simplified_vertex_count=len(line.coords), route_length_m=values["length_m"], direct_distance_m=round(endpoint_selection.direct_distance_m, 1), detour_ratio=round(line.length / max(endpoint_selection.direct_distance_m, 1), 3), buildings_intersecting_right_of_way=0, minimum_building_clearance_m=round(corridor.distance(buildings), 1), environmental_sensitivity_overlap_m2=values["environmental_overlap_m2"], water_crossing_count=values["water_crossings"], bridge_tunnel_exposure_m=values["bridge_tunnel_exposure_m"], major_road_exposure_m=values["major_road_exposure_m"], turn_count=values["turn_count"], street_network_percentage=100, edge_ids=[edge.original_edge_id or edge.edge_id for edge in candidate.edges], validation_checks=checks, warnings=["Synthetic endpoint connectors are not mapped roads."], calculation_trace=["Build undirected physical street topology", "Generate deterministic k-shortest candidates", "Select metric-first strategy winners", "Validate corridor in EPSG:2056"], strategy_cost=round(sum(edge_cost(edge, strategy, environmental, water) for edge in candidate.edges), 1), road_class_breakdown=road_classes, bridge_count=sum(edge.bridge for edge in candidate.edges), tunnel_count=sum(edge.tunnel for edge in candidate.edges), constructability_score=constructability_score, candidate_rank=candidate.rank, strategy_note=strategy_notes[strategy], **response_endpoint_fields(endpoint_selection),
+        ))
     distinctness: dict[str, dict[str, float]] = {}
     for index, left in enumerate(plans):
-        left_line = shape(left.centreline)
-        for right in plans[index + 1 :]:
-            right_line = shape(right.centreline)
-            hausdorff = left_line.hausdorff_distance(right_line)
-            distinctness[f"{left.strategy}:{right.strategy}"] = {
-                "hausdorff_distance_m": round(hausdorff, 1),
-                "length_difference_m": round(abs(left.route_length_m - right.route_length_m), 1),
-                "environmental_overlap_difference_m2": round(
-                    abs(
-                        left.environmental_sensitivity_overlap_m2
-                        - right.environmental_sensitivity_overlap_m2
-                    ),
-                    1,
-                ),
-            }
-            if hausdorff < 10 and abs(left.route_length_m - right.route_length_m) < 10:
+        left_candidate = selected[index][1]
+        for right_index, right in enumerate(plans[index + 1 :], index + 1):
+            shared = shared_edge_percentage(left_candidate.edges, selected[right_index][1].edges)
+            key = f"{left.strategy}:{right.strategy}"
+            distinctness[key] = {"shared_length_percentage": shared, "length_difference_m": round(abs(left.route_length_m - right.route_length_m), 1), "environmental_overlap_difference_m2": round(abs(left.environmental_sensitivity_overlap_m2 - right.environmental_sensitivity_overlap_m2), 1)}
+            left.pairwise_overlap[right.strategy] = shared
+            right.pairwise_overlap[left.strategy] = shared
+            if shared >= 85:
                 left.converged_with.append(right.strategy)
                 right.converged_with.append(left.strategy)
     return AlternativesResponse(
         assumptions=request,
         alternatives=plans,
         distinctness=distinctness,
-        comparison_runtime_ms=round((time.perf_counter() - started) * 1000, 1),
+        default_selection="constructability",
+        comparison_runtime_ms=0,
+        candidate_count=len(candidates),
+        topology_limitation=limitation,
     )
+
+
+# Stage 2A: the single-plan endpoint uses the persisted street graph.
+def plan(
+    scenario_id: str, features: list[dict[str, Any]], request: PlanRequest
+) -> PlanResponse:
+    from app.endpoint_selection import resolve_endpoints, response_endpoint_fields
+    from app.road_graph import load_road_edges
+    from app.road_graph import metric as to_metric
+    from app.route_candidates import route_candidate
+    from app.route_metrics import line_from_edges, metrics
+
+    if request.scenario_id != scenario_id:
+        raise PlanningError(
+            "unknown_scenario", "The requested scenario ID does not match the prepared scenario.", {}
+        )
+    buildings = unary_union([to_metric(shape(f["geometry"])) for f in features if f["properties"]["layer"] == "buildings"])
+    environmental = unary_union([to_metric(shape(f["geometry"])) for f in features if f["properties"]["layer"] == "environmental_sensitivity"])
+    water = unary_union([to_metric(shape(f["geometry"])) for f in features if f["properties"]["layer"] == "water"])
+    edges = load_road_edges(features)
+    endpoint_selection = resolve_endpoints(features, request, edges)
+    endpoints = endpoint_selection.points
+    start_id, end_id = endpoint_selection.snapped_nodes["grid_connection"], endpoint_selection.snapped_nodes["proposed_development"]
+    start, end = endpoint_selection.snapped_points["grid_connection"], endpoint_selection.snapped_points["proposed_development"]
+    start_distance, end_distance = endpoint_selection.connector_distances_m["grid_connection"], endpoint_selection.connector_distances_m["proposed_development"]
+    edges = endpoint_selection.routing_edges
+    strategy = "constructability" if str(request.strategy) == "balanced" else str(request.strategy)
+    candidate = route_candidate(edges, start_id, end_id, strategy, set())
+    line = line_from_edges(candidate.edges)
+    corridor = line.buffer(request.corridor_width_m / 2)
+    if corridor.intersects(buildings): raise PlanningError("building_intersection", "Road corridor intersects a mapped building.", {})
+    values = metrics(candidate.edges, line, corridor, environmental, water)
+    connectors = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"kind":"synthetic_connector","endpoint_id":"grid_connection","snapped_node_id":start_id,"distance_m":round(start_distance,1)},"geometry":_export(LineString([endpoints['grid_connection'],start]))},{"type":"Feature","properties":{"kind":"synthetic_connector","endpoint_id":"proposed_development","snapped_node_id":end_id,"distance_m":round(end_distance,1)},"geometry":_export(LineString([endpoints['proposed_development'],end]))}]}
+    return PlanResponse(plan_id=sha256(f"{scenario_id}|{request.corridor_width_m}|{start_id}|{end_id}".encode()).hexdigest()[:16],strategy=str(request.strategy),grid_resolution_m=0,computation_duration_ms=0,feasible=True,centreline=_export(line),corridor=_export(corridor),right_of_way=_export(corridor),hard_exclusion_envelope={"type":"GeometryCollection","geometries":[]},endpoint_connectors=connectors,endpoint_markers={"type":"FeatureCollection","features":[]},raw_vertex_count=len(line.coords),simplified_vertex_count=len(line.coords),route_length_m=values['length_m'],direct_distance_m=round(endpoint_selection.direct_distance_m,1),detour_ratio=round(line.length/max(endpoint_selection.direct_distance_m,1),3),buildings_intersecting_right_of_way=0,environmental_sensitivity_overlap_m2=values['environmental_overlap_m2'],water_crossing_count=values['water_crossings'],bridge_tunnel_exposure_m=values['bridge_tunnel_exposure_m'],major_road_exposure_m=values['major_road_exposure_m'],turn_count=values['turn_count'],street_network_percentage=100,edge_ids=[e.original_edge_id or e.edge_id for e in candidate.edges],validation_checks=[],warnings=["Synthetic endpoint connectors are not mapped roads."],calculation_trace=["Load persisted road graph","Snap synthetic endpoints","Run graph A*","Buffer corridor in EPSG:2056"],strategy_cost=values['length_m'], **response_endpoint_fields(endpoint_selection))
