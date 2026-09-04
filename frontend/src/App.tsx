@@ -228,6 +228,7 @@ function App() {
   > | null>(null);
   const presentationMode = useRef<ViewMode>("2d");
   const [mapReady, setMapReady] = useState(false);
+  const [styleRevision, setStyleRevision] = useState(0);
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<AlternativesResponse | null>(
@@ -530,8 +531,13 @@ function App() {
     });
     map.current = instance;
     instance.addControl(new maplibregl.NavigationControl(), "bottom-right");
-    instance.on("load", () => setMapReady(true));
+    const onStyleLoad = () => {
+      setMapReady(true);
+      setStyleRevision((revision) => revision + 1);
+    };
+    instance.on("style.load", onStyleLoad);
     return () => {
+      instance.off("style.load", onStyleLoad);
       instance.remove();
       map.current = null;
     };
@@ -971,7 +977,7 @@ function App() {
         "line-dasharray": [1.2, 2],
       },
     );
-  }, [mapReady, scenario]);
+  }, [mapReady, scenario, styleRevision]);
   useEffect(() => {
     if (!map.current || !scenario) return;
     const instance = map.current;
@@ -1009,7 +1015,7 @@ function App() {
         "fill-opacity",
         is3D ? 0.24 : 0.67,
       );
-  }, [scenario, viewMode, visibleLayers]);
+  }, [scenario, styleRevision, viewMode, visibleLayers]);
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
@@ -1119,7 +1125,7 @@ function App() {
         instance.off("mouseleave", layer, clearPointer);
       });
     };
-  }, [mapReady, officialContext, officialContextVisible, selectedOfficialAsset]);
+  }, [mapReady, officialContext, officialContextVisible, selectedOfficialAsset, styleRevision]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setPlacementMode(null);
@@ -1215,6 +1221,7 @@ function App() {
     draftEndpoints.grid_connection,
     mapReady,
     placementMode,
+    styleRevision,
   ]);
   useEffect(() => {
     if (!mapReady || !map.current) return;
@@ -1326,6 +1333,7 @@ function App() {
     selectedPlan,
     selectedRouteVisible,
     selectedStrategy,
+    styleRevision,
     visibleCorridorGroups,
   ]);
   useEffect(() => {
@@ -1336,7 +1344,7 @@ function App() {
         if (instance.getLayer(id)) instance.moveLayer(id);
       },
     );
-  }, [alternatives, displayedEndpoints, mapReady, selectedStrategy]);
+  }, [alternatives, displayedEndpoints, mapReady, selectedStrategy, styleRevision]);
   useEffect(() => {
     const instance = map.current;
     if (!instance) return;
@@ -1355,7 +1363,7 @@ function App() {
           corridorDesignVisible ? "visible" : "none",
         );
     });
-  }, [corridorDesignVisible, mapReady, alternatives, selectedStrategy]);
+  }, [corridorDesignVisible, mapReady, alternatives, selectedStrategy, styleRevision]);
   useEffect(() => {
     if (alternatives && mapReady) focusAlternatives();
   }, [alternatives, focusAlternatives, mapReady]);
