@@ -175,6 +175,19 @@ function distanceMeters(a?: GeoPoint, b?: GeoPoint): number | null {
     6371008.8 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
   );
 }
+function officialAssetStatusLabel(value: unknown): string {
+  const status = String(value ?? "Not published");
+  return status === "bestehend" ? "Existing" : status;
+}
+function officialAssetKindLabel(value: unknown): string {
+  const kind = String(value ?? "Published asset");
+  if (kind === "Wasserkraftwerk") return "Hydroelectric plant";
+  if (kind === "Unterwerk") return "Substation";
+  return kind;
+}
+function officialAssetClassification(properties: Record<string, unknown>): string {
+  return `${officialAssetStatusLabel(properties.status)} ${officialAssetKindLabel(properties.kind).toLowerCase()}`;
+}
 function circleFeature(point: GeoPoint): GeoJSON.Feature<GeoJSON.Polygon> {
   const [longitude, latitude] = point.coordinates;
   const latitudeRadius = 1000 / 111320;
@@ -284,13 +297,13 @@ function App() {
           shortestPlan.environmental_sensitivity_overlap_m2 -
           plan.environmental_sensitivity_overlap_m2;
         return overlapReduction > 0
-          ? `${overlapReduction.toFixed(1)} m² less environmental overlap · ${lengthText}.`
-          : `No lower environmental overlap · ${lengthText}.`;
+          ? `${overlapReduction.toFixed(1)} mÂ² less environmental overlap Â· ${lengthText}.`
+          : `No lower environmental overlap Â· ${lengthText}.`;
       }
       const turnReduction = shortestPlan.turn_count - plan.turn_count;
       return turnReduction > 0
-        ? `${turnReduction} fewer turns · ${lengthText}.`
-        : `No fewer turns · ${lengthText}.`;
+        ? `${turnReduction} fewer turns Â· ${lengthText}.`
+        : `No fewer turns Â· ${lengthText}.`;
     },
     [shortestPlan],
   );
@@ -504,7 +517,7 @@ function App() {
             type: "raster",
             tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
             tileSize: 256,
-            attribution: "© OpenStreetMap contributors",
+            attribution: "Â© OpenStreetMap contributors",
           },
         },
         layers: [{ id: "osm", type: "raster", source: "osm-tiles" }],
@@ -608,7 +621,7 @@ function App() {
         google3dStatus === "missing_key"
           ? "Photorealistic 3D requires a configured Google Maps key."
           : google3dStatus === "loading"
-            ? "Loading Google Photorealistic 3D…"
+            ? "Loading Google Photorealistic 3Dâ€¦"
             : google3dStatus === "authorization_error"
               ? "Google Maps authorization failed for Photorealistic 3D."
               : "Google Photorealistic 3D could not be rendered.";
@@ -688,6 +701,8 @@ function App() {
         officialPointAssets.forEach((feature) => {
           const [lng, lat] = feature.geometry.coordinates;
           const kind = String(feature.properties.kind ?? "Official asset");
+          const isSelected =
+            feature.properties.official_id === selectedOfficialAsset?.properties.official_id;
           const marker = new Marker3DElement({
             position: { lat, lng },
             altitudeMode: "CLAMP_TO_GROUND",
@@ -697,13 +712,14 @@ function App() {
           marker.dataset.gridpathOfficial = "true";
           marker.append(
             new PinElement({
-              background: "#8061b5",
-              borderColor: "#160f24",
-              glyphColor: "#f3effa",
+              background: isSelected ? "#d8c5f4" : "#8061b5",
+              borderColor: isSelected ? "#ffffff" : "#160f24",
+              glyphColor: isSelected ? "#160f24" : "#f3effa",
               glyphText: kind === "Unterwerk" ? "S" : "H",
-              scale: 0.62,
+              scale: isSelected ? 1.02 : 0.72,
             }),
           );
+          marker.addEventListener("gmp-click", () => setSelectedOfficialAsset(feature));
           add(marker);
         });
       if (!alternatives || !selectedPlan || !corridorDesignVisible) return;
@@ -777,6 +793,7 @@ function App() {
     visibleCorridorGroups,
     officialContextVisible,
     officialPointAssets,
+    selectedOfficialAsset,
   ]);
   useEffect(() => {
     const scene = googleMap.current;
@@ -976,6 +993,7 @@ function App() {
       "official-grid-overhead",
       "official-grid-substations",
       "official-grid-hydro",
+      "official-grid-selected-halo",
     ];
     layerIds.forEach((id) => {
       if (instance.getLayer(id)) instance.removeLayer(id);
@@ -988,6 +1006,7 @@ function App() {
       data: officialContext,
     });
     const before = instance.getLayer("routes-underlay") ? "routes-underlay" : undefined;
+    const selectedOfficialId = Number(selectedOfficialAsset?.properties.official_id ?? -1);
     instance.addLayer({
       id: "official-grid-cables",
       type: "line",
@@ -995,8 +1014,8 @@ function App() {
       filter: ["==", ["get", "installation"], "Kabelleitung"],
       paint: {
         "line-color": "#8061b5",
-        "line-width": 2,
-        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.35, 0.68],
+        "line-width": 3.4,
+        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.42, 0.8],
         "line-dasharray": [1.4, 1.2],
       },
     } as maplibregl.LineLayerSpecification, before);
@@ -1007,8 +1026,8 @@ function App() {
       filter: ["==", ["get", "installation"], "Freileitung"],
       paint: {
         "line-color": "#8061b5",
-        "line-width": 1.6,
-        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.35, 0.62],
+        "line-width": 2.6,
+        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.42, 0.76],
       },
     } as maplibregl.LineLayerSpecification, before);
     instance.addLayer({
@@ -1017,10 +1036,10 @@ function App() {
       source: "official-grid-context",
       filter: ["==", ["get", "kind"], "Unterwerk"],
       paint: {
-        "circle-radius": 5,
-        "circle-color": "#8061b5",
-        "circle-stroke-color": "#150f22",
-        "circle-stroke-width": 1.5,
+        "circle-radius": ["case", ["==", ["get", "official_id"], selectedOfficialId], 8, 5.5],
+        "circle-color": ["case", ["==", ["get", "official_id"], selectedOfficialId], "#d8c5f4", "#8061b5"],
+        "circle-stroke-color": ["case", ["==", ["get", "official_id"], selectedOfficialId], "#ffffff", "#150f22"],
+        "circle-stroke-width": ["case", ["==", ["get", "official_id"], selectedOfficialId], 2.5, 1.6],
       },
     } as maplibregl.CircleLayerSpecification, before);
     instance.addLayer({
@@ -1029,10 +1048,24 @@ function App() {
       source: "official-grid-context",
       filter: ["==", ["get", "kind"], "Wasserkraftwerk"],
       paint: {
-        "circle-radius": 4.5,
-        "circle-color": "#a686d4",
-        "circle-stroke-color": "#150f22",
+        "circle-radius": ["case", ["==", ["get", "official_id"], selectedOfficialId], 8, 5],
+        "circle-color": ["case", ["==", ["get", "official_id"], selectedOfficialId], "#d8c5f4", "#a686d4"],
+        "circle-stroke-color": ["case", ["==", ["get", "official_id"], selectedOfficialId], "#ffffff", "#150f22"],
+        "circle-stroke-width": ["case", ["==", ["get", "official_id"], selectedOfficialId], 2.5, 1.6],
+      },
+    } as maplibregl.CircleLayerSpecification, before);
+    instance.addLayer({
+      id: "official-grid-selected-halo",
+      type: "circle",
+      source: "official-grid-context",
+      filter: ["==", ["get", "official_id"], selectedOfficialId],
+      paint: {
+        "circle-radius": 13,
+        "circle-color": "#d8c5f4",
+        "circle-opacity": 0.2,
+        "circle-stroke-color": "#d8c5f4",
         "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": 0.85,
       },
     } as maplibregl.CircleLayerSpecification, before);
     const selectAsset = (event: maplibregl.MapLayerMouseEvent) => {
@@ -1042,11 +1075,26 @@ function App() {
     };
     instance.on("click", "official-grid-substations", selectAsset);
     instance.on("click", "official-grid-hydro", selectAsset);
+    const pointLayers = ["official-grid-substations", "official-grid-hydro"] as const;
+    const showPointer = () => {
+      instance.getCanvas().style.cursor = "pointer";
+    };
+    const clearPointer = () => {
+      instance.getCanvas().style.cursor = "";
+    };
+    pointLayers.forEach((layer) => {
+      instance.on("mouseenter", layer, showPointer);
+      instance.on("mouseleave", layer, clearPointer);
+    });
     return () => {
       instance.off("click", "official-grid-substations", selectAsset);
       instance.off("click", "official-grid-hydro", selectAsset);
+      pointLayers.forEach((layer) => {
+        instance.off("mouseenter", layer, showPointer);
+        instance.off("mouseleave", layer, clearPointer);
+      });
     };
-  }, [mapReady, officialContext, officialContextVisible]);
+  }, [mapReady, officialContext, officialContextVisible, selectedOfficialAsset]);
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
@@ -1529,7 +1577,7 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="topbar-location">Zürich</div>
+        <div className="topbar-location">ZÃ¼rich</div>
         <div className="topbar-brand" aria-label="GridPath planning prototype">
           <span className="brand-grid">N!</span>
           <span>GridPath</span>
@@ -1538,8 +1586,8 @@ function App() {
           <span className="status" title={scenario ? "Scenario loaded" : "Loading scenario"}>
             <i />
           </span>
-          <button type="button" className="header-icon" title="Exit demo" aria-label="Exit demo">↗</button>
-          <button type="button" className="header-icon" title="Planner profile" aria-label="Planner profile">◉</button>
+          <button type="button" className="header-icon" title="Exit demo" aria-label="Exit demo">â†—</button>
+          <button type="button" className="header-icon" title="Planner profile" aria-label="Planner profile">â—‰</button>
         </div>
       </header>
       <section className="workspace">
@@ -1547,15 +1595,15 @@ function App() {
           <div className="agent-heading">
             <span className="agent-mark">GP</span>
             <div>
-              <h2>N! Corridor Planner</h2>
-              <p>Your agentic corridor planner</p>
+              <h2>N! GridPath</h2>
+              <p>Infrastructure corridor screening</p>
             </div>
           </div>
           {error ? (
             <div className="message error-message">{error}</div>
           ) : !scenario ? (
             <div className="message">
-              Loading prepared Zurich-region spatial layers…
+              Loading prepared Zurich-region spatial layersâ€¦
             </div>
           ) : (
             <>
@@ -1618,10 +1666,6 @@ function App() {
                   </div>
                 ) : null}
               </div>
-              <div className="intro-card">
-                Select any two planning locations within 1 km. GridPath compares
-                evidence-based underground corridor options between them.
-              </div>
               {officialContext ? (
                 <div className="constraint-card official-context-card">
                   <details>
@@ -1634,8 +1678,8 @@ function App() {
                     {nearestOfficialPointAsset ? (
                       <p>
                         <strong>{String(nearestOfficialPointAsset.feature.properties.name)}</strong>
-                        {` · ${Math.round(nearestOfficialPointAsset.distance)} m from Point A`}<br />
-                        {`${String(nearestOfficialPointAsset.feature.properties.status)} ${String(nearestOfficialPointAsset.feature.properties.kind).toLowerCase()} · ${(nearestOfficialPointAsset.feature.properties.voltage_kv as number[]).join("/")} kV · ${String(nearestOfficialPointAsset.feature.properties.owner)}`}
+                        {` Â· ${Math.round(nearestOfficialPointAsset.distance)} m from Point A`}<br />
+                        {`${officialAssetClassification(nearestOfficialPointAsset.feature.properties)} · ${(nearestOfficialPointAsset.feature.properties.voltage_kv as number[]).join("/")} kV · ${String(nearestOfficialPointAsset.feature.properties.owner)}`}
                       </p>
                     ) : null}
                     <small>Published network context only. Capacity and connection availability require confirmation from the network operator.</small>
@@ -1702,7 +1746,7 @@ function App() {
                 disabled={planning || !readyToGenerate}
               >
                 {planning
-                  ? "Generating alternatives…"
+                  ? "Generating alternativesâ€¦"
                   : "Evaluate corridor options"}
               </button>
               {planError ? (
@@ -1740,8 +1784,8 @@ function App() {
                           {routeMeta[alternative.strategy].label}
                         </strong>
                         <span>
-                          {alternative.route_length_m} m · {alternative.strategy === "environmental"
-                            ? `${alternative.environmental_sensitivity_overlap_m2} m² overlap`
+                          {alternative.route_length_m} m Â· {alternative.strategy === "environmental"
+                            ? `${alternative.environmental_sensitivity_overlap_m2} mÂ² overlap`
                             : alternative.strategy === "constructability"
                               ? `${alternative.turn_count} turns`
                               : "minimum length"}
@@ -1761,7 +1805,7 @@ function App() {
                           <div><dt>Tunnel exposure</dt><dd>{selectedPlan.road_tunnel_segments_m} m</dd></div>
                           <div><dt>Major-road exposure</dt><dd>{selectedPlan.major_road_exposure_m} m</dd></div>
                           <div><dt>Candidate rank</dt><dd>{selectedPlan.candidate_rank}</dd></div>
-                          <div><dt>Shared-edge overlap</dt><dd>{Object.entries(selectedPlan.pairwise_overlap).map(([strategy, value]) => `${routeMeta[strategy as Strategy]?.label ?? strategy} ${value}%`).join(" · ") || "None"}</dd></div>
+                          <div><dt>Shared-edge overlap</dt><dd>{Object.entries(selectedPlan.pairwise_overlap).map(([strategy, value]) => `${routeMeta[strategy as Strategy]?.label ?? strategy} ${value}%`).join(" Â· ") || "None"}</dd></div>
                           <div><dt>Candidates screened</dt><dd>{alternatives.candidate_count}</dd></div>
                         </dl>
                       </details>
@@ -1787,16 +1831,16 @@ function App() {
             <div ref={mapContainer} className="map" />
             {selectedOfficialAsset ? (
               <aside className="official-asset-popover" aria-label="Official asset details">
-                <button type="button" onClick={() => setSelectedOfficialAsset(null)} aria-label="Close official asset details">×</button>
+                <button type="button" onClick={() => setSelectedOfficialAsset(null)} aria-label="Close official asset details">Ã—</button>
                 <strong>{String(selectedOfficialAsset.properties.name ?? "Unnamed published asset")}</strong>
-                <span>{String(selectedOfficialAsset.properties.kind ?? "Published asset")}</span>
+                <span>{officialAssetKindLabel(selectedOfficialAsset.properties.kind)}</span>
                 <dl>
                   <div><dt>Owner</dt><dd>{String(selectedOfficialAsset.properties.owner ?? "Not published")}</dd></div>
                   <div><dt>Voltage</dt><dd>{Array.isArray(selectedOfficialAsset.properties.voltage_kv) ? `${(selectedOfficialAsset.properties.voltage_kv as number[]).join("/")} kV` : "Not published"}</dd></div>
-                  <div><dt>Status</dt><dd>{String(selectedOfficialAsset.properties.status ?? "Not published")}</dd></div>
+                  <div><dt>Status</dt><dd>{officialAssetStatusLabel(selectedOfficialAsset.properties.status)}</dd></div>
                   <div><dt>Cable / overhead</dt><dd>{String(selectedOfficialAsset.properties.installation ?? "Not applicable")}</dd></div>
-                  <div><dt>From Point A</dt><dd>{selectedOfficialDistances?.pointA === null ? "—" : `${Math.round(selectedOfficialDistances?.pointA ?? 0)} m`}</dd></div>
-                  <div><dt>From Point B</dt><dd>{selectedOfficialDistances?.pointB === null ? "—" : `${Math.round(selectedOfficialDistances?.pointB ?? 0)} m`}</dd></div>
+                  <div><dt>From Point A</dt><dd>{selectedOfficialDistances?.pointA === null ? "â€”" : `${Math.round(selectedOfficialDistances?.pointA ?? 0)} m`}</dd></div>
+                  <div><dt>From Point B</dt><dd>{selectedOfficialDistances?.pointB === null ? "â€”" : `${Math.round(selectedOfficialDistances?.pointB ?? 0)} m`}</dd></div>
                 </dl>
               </aside>
             ) : null}
@@ -1819,7 +1863,7 @@ function App() {
               </div>
               {viewMode === "3d" ? (
                 <div className="massing-label">
-                  Google Photorealistic 3D · contextual visualization
+                  Google Photorealistic 3D Â· contextual visualization
                 </div>
               ) : null}
             </div>
