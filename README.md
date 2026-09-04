@@ -1,4 +1,5 @@
 # GridPath
+<img width="222" height="52" alt="image" src="https://github.com/user-attachments/assets/aab139f5-0e98-49ab-87be-aa82395c7d38" />
 
 GridPath is an end-to-end infrastructure corridor screening MVP built for the goNEON Platform & Ecosystem Owner exercise.
 
