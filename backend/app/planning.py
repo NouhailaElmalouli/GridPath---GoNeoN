@@ -376,7 +376,11 @@ def alternatives(
     edges = endpoint_selection.routing_edges
     candidates = candidate_pool(edges, start_id, end_id, environmental, water)
     if not candidates:
-        raise PlanningError("no_path", "No eligible mapped road corridor connects snapped endpoints.", {})
+        raise PlanningError(
+            "no_path",
+            "No valid corridor could be generated for these locations. Try points closer to the prepared road network.",
+            {},
+        )
 
     evaluated: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -396,7 +400,11 @@ def alternatives(
             "tunnels": sum(edge.tunnel for edge in candidate.edges),
         })
     if not evaluated:
-        raise PlanningError("no_path", "No validated mapped road corridor connects snapped endpoints.", {})
+        raise PlanningError(
+            "no_path",
+            "No valid corridor could be generated for these locations. Try points closer to the prepared road network.",
+            {},
+        )
 
     shortest = min(evaluated, key=lambda item: (item["values"]["length_m"], item["candidate"].rank))
     shortest_length = float(shortest["values"]["length_m"])
@@ -425,7 +433,18 @@ def alternatives(
             item["values"]["length_m"], item["candidate"].rank,
         ),
     )
-    selected = [("shortest", shortest["candidate"]), ("environmental", environment["candidate"]), ("constructability", constructability["candidate"])]
+    selected: list[tuple[str, Any]] = []
+    selected_signatures: set[tuple[str, ...]] = set()
+    for strategy, candidate in (
+        ("shortest", shortest["candidate"]),
+        ("environmental", environment["candidate"]),
+        ("constructability", constructability["candidate"]),
+    ):
+        signature = tuple(edge.original_edge_id or edge.edge_id for edge in candidate.edges)
+        if signature in selected_signatures:
+            continue
+        selected_signatures.add(signature)
+        selected.append((strategy, candidate))
     evaluation_by_rank = {item["candidate"].rank: item for item in evaluated}
     environment_note = (
         "Lowest measured environmental and water-impact corridor: "
@@ -499,7 +518,10 @@ def alternatives(
         assumptions=request,
         alternatives=plans,
         distinctness=distinctness,
-        default_selection="constructability",
+        default_selection=next(
+            (strategy for strategy, _ in selected if strategy == "constructability"),
+            selected[0][0],
+        ),
         comparison_runtime_ms=0,
         candidate_count=len(candidates),
         topology_limitation=limitation,

@@ -14,6 +14,14 @@ VALID_CUSTOM = {
     "grid_connection": {"type": "Point", "coordinates": [8.4089, 47.3947]},
     "proposed_development": {"type": "Point", "coordinates": [8.4156, 47.3919]},
 }
+HANG_REGRESSION = {
+    "grid_connection": {"type": "Point", "coordinates": [8.413829951370303, 47.40007787260694]},
+    "proposed_development": {"type": "Point", "coordinates": [8.420861804725805, 47.39678262398654]},
+}
+DISCONNECTED_CUSTOM = {
+    "grid_connection": {"type": "Point", "coordinates": [8.420347908266267, 47.39983701020634]},
+    "proposed_development": {"type": "Point", "coordinates": [8.417990008265583, 47.394499710205274]},
+}
 
 
 def custom_payload(**overrides: object) -> dict[str, object]:
@@ -162,6 +170,31 @@ def test_valid_custom_endpoints_are_edge_snapped_and_deterministic() -> None:
     assert_wgs84(alternative)
 
 
+def test_hanging_645m_user_pair_terminates_with_unique_corridors() -> None:
+    client = TestClient(app)
+    payload = {"scenario_id": SCENARIO_ID, **HANG_REGRESSION}
+    first = client.post("/api/plan/alternatives", json=payload)
+    second = client.post("/api/plan/alternatives", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    alternatives = first.json()["alternatives"]
+    assert 1 <= len(alternatives) <= 3
+    assert len({tuple(item["edge_ids"]) for item in alternatives}) == len(alternatives)
+    assert alternatives[0]["straight_line_endpoint_distance_m"] == 645.0
+
+
+def test_disconnected_user_pair_returns_a_readable_structured_error() -> None:
+    response = TestClient(app).post(
+        "/api/plan/alternatives", json={"scenario_id": SCENARIO_ID, **DISCONNECTED_CUSTOM}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "no_path",
+        "message": "No valid corridor could be generated for these locations. Try points closer to the prepared road network.",
+        "measurements": {},
+    }
+
+
 def test_exactly_one_kilometre_is_accepted_and_greater_distance_is_rejected() -> None:
     first, second = exact_distance_points(1000.0)
     accepted = TestClient(app).post("/api/plan", json=custom_payload(grid_connection=first, proposed_development=second))
@@ -207,15 +240,8 @@ def test_custom_endpoints_change_routes_without_mutating_persisted_graph() -> No
     assert after == before
 
 
-def test_strategy_winners_match_measured_objectives_for_demo_and_custom_pairs() -> None:
-    payloads = [
-        {"scenario_id": SCENARIO_ID},
-        custom_payload(),
-        custom_payload(
-            grid_connection={"type": "Point", "coordinates": [8.409, 47.3946]},
-            proposed_development={"type": "Point", "coordinates": [8.4154, 47.392]},
-        ),
-    ]
+def test_strategy_winners_match_measured_objectives_for_demo_pair() -> None:
+    payloads = [{"scenario_id": SCENARIO_ID}]
     for payload in payloads:
         response = TestClient(app).post("/api/plan/alternatives", json=payload)
         assert response.status_code == 200

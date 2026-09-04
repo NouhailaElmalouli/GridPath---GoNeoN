@@ -1381,6 +1381,8 @@ function App() {
     if (!scenario || planning || !readyToGenerate) return;
     setPlanning(true);
     setPlanError(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30_000);
     try {
       const body: Record<string, unknown> = {
         scenario_id: "zurich-dietikon-urdorf-v1",
@@ -1400,6 +1402,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const responseBody = await response.json();
       if (!response.ok) {
@@ -1412,7 +1415,8 @@ function App() {
       }
       if (
         !Array.isArray(responseBody?.alternatives) ||
-        responseBody.alternatives.length !== 3
+        responseBody.alternatives.length < 1 ||
+        responseBody.alternatives.length > 3
       )
         throw new Error(
           "HTTP 200: alternatives response is missing route geometry",
@@ -1437,11 +1441,16 @@ function App() {
       setViewMode(presentationMode.current);
     } catch (requestError) {
       setPlanError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Planning request failed",
+        requestError instanceof DOMException && requestError.name === "AbortError"
+          ? "Planning timed out. Try points closer to the prepared road network."
+          : requestError instanceof TypeError
+            ? "Network request failed. Check that the planning service is available."
+            : requestError instanceof Error
+              ? requestError.message
+              : "Planning request failed",
       );
     } finally {
+      window.clearTimeout(timeoutId);
       setPlanning(false);
     }
   };

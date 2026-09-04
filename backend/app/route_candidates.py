@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
 import networkx as nx
@@ -13,6 +14,7 @@ from app.road_graph import RoadEdge, undirected_graph
 MAJOR_ROADS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"}
 RESTRICTED_ACCESS = {"private", "no"}
 LOCAL_ROADS = {"service", "residential", "living_street", "unclassified", "tertiary", "secondary"}
+MAX_PATHS_EXAMINED_PER_OBJECTIVE = 48
 
 
 @dataclass(frozen=True)
@@ -76,11 +78,20 @@ def candidate_pool(
     """Generate deterministic k-shortest candidates and shared-edge-penalty variants."""
     result: list[Candidate] = []
     seen: set[tuple[str, ...]] = set()
+    topology = undirected_graph(edges)
+    if (
+        start not in topology
+        or end not in topology
+        or not nx.has_path(topology, start, end)
+    ):
+        return result
     for strategy in ("shortest", "environmental", "constructability"):
         costs = {edge.edge_id: edge_cost(edge, strategy, environmental, water) for edge in edges}
         graph = undirected_graph(edges, costs)
         generated = 0
-        for path in _paths(graph, start, end):
+        for path in islice(
+            _paths(graph, start, end), MAX_PATHS_EXAMINED_PER_OBJECTIVE
+        ):
             path_edges = [graph.edges[a, b]["edge"] for a, b in zip(path, path[1:], strict=False)]
             key = tuple(edge.edge_id for edge in path_edges)
             if key in seen or not is_continuous_candidate(path_edges):
