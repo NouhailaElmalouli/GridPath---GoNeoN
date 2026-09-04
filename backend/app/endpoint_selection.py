@@ -59,7 +59,6 @@ def resolve_endpoints(features: list[dict[str, Any]], request: PlanRequest, edge
         else:
             layers.setdefault(properties["layer"], []).append(geometry)
     study_area = unary_union(layers.get("study_area", []))
-    buildings = unary_union(layers.get("buildings", []))
     water = unary_union(layers.get("water", []))
     protected = unary_union(layers.get("statutory_protected", []))
     points: dict[str, Point] = {}
@@ -71,8 +70,6 @@ def resolve_endpoints(features: list[dict[str, Any]], request: PlanRequest, edge
             supplied_ids.add(endpoint_id)
         if supplied and not study_area.covers(point):
             _fail("ENDPOINT_OUTSIDE_STUDY_AREA", "Selected endpoint is outside the prepared study area.", endpoint_id)
-        if supplied and not buildings.is_empty and buildings.covers(point):
-            _fail("ENDPOINT_IN_BUILDING", "Selected endpoint is inside a building footprint.", endpoint_id)
         if supplied and not water.is_empty and water.covers(point):
             _fail("ENDPOINT_IN_WATER", "Selected endpoint is inside a water feature.", endpoint_id)
         if supplied and not protected.is_empty and protected.covers(point):

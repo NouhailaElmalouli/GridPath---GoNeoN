@@ -63,6 +63,15 @@ type CorridorGroup = {
   alternatives: PlanAlternative[];
   representative: PlanAlternative;
 };
+type OfficialContext = GeoJSON.FeatureCollection & {
+  properties: {
+    provenance: Record<string, unknown>;
+    operator_territory: Record<string, string>;
+    disclaimer: string;
+    feature_counts: Record<string, number>;
+  };
+};
+type OfficialAsset = GeoJSON.Feature<GeoJSON.Point, Record<string, unknown>>;
 
 const apiBaseUrl = "";
 const googleMapsKey = (
@@ -229,6 +238,10 @@ function App() {
     constructability: true,
   });
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [officialContext, setOfficialContext] = useState<OfficialContext | null>(null);
+  const [officialContextVisible, setOfficialContextVisible] = useState(false);
+  const [selectedOfficialAsset, setSelectedOfficialAsset] =
+    useState<OfficialAsset | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({
     buildings: true,
     statutory_protected: true,
@@ -314,6 +327,23 @@ function App() {
         ]),
     ) as Endpoints;
   }, [scenario]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/official-grid-context.geojson")
+      .then((response) => {
+        if (!response.ok) throw new Error("Official context asset could not be loaded");
+        return response.json();
+      })
+      .then((value: OfficialContext) => {
+        if (!cancelled) setOfficialContext(value);
+      })
+      .catch(() => {
+        // The planning workflow remains fully usable if this optional context is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const userSelected = Boolean(
     draftEndpoints.grid_connection || draftEndpoints.proposed_development,
   );
@@ -336,6 +366,36 @@ function App() {
       : userSelected
         ? draftEndpoints
         : demoEndpoints;
+  const officialPointAssets = useMemo(
+    () =>
+      officialContext?.features.filter(
+        (feature): feature is OfficialAsset => feature.geometry?.type === "Point",
+      ) ?? [],
+    [officialContext],
+  );
+  const nearestOfficialPointAsset = useMemo(() => {
+    const pointA = displayedEndpoints.grid_connection;
+    if (!pointA) return null;
+    return officialPointAssets
+      .map((feature) => ({
+        feature,
+        distance: distanceMeters(pointA, feature.geometry as GeoPoint) ?? Infinity,
+      }))
+      .sort((a, b) => a.distance - b.distance)[0] ?? null;
+  }, [displayedEndpoints.grid_connection, officialPointAssets]);
+  const selectedOfficialDistances = useMemo(() => {
+    if (!selectedOfficialAsset) return null;
+    return {
+      pointA: distanceMeters(
+        displayedEndpoints.grid_connection,
+        selectedOfficialAsset.geometry as GeoPoint,
+      ),
+      pointB: distanceMeters(
+        displayedEndpoints.proposed_development,
+        selectedOfficialAsset.geometry as GeoPoint,
+      ),
+    };
+  }, [displayedEndpoints, selectedOfficialAsset]);
   const fitMap = useCallback(
     (
       bounds: [[number, number], [number, number]],
@@ -602,8 +662,8 @@ function App() {
             altitudeMode: "CLAMP_TO_GROUND",
             collisionBehavior: "REQUIRED",
             title: isGrid
-              ? "Representative grid connection"
-              : "Proposed development",
+              ? "Point A"
+              : "Point B",
           });
           marker.dataset.gridpathEndpoint = "true";
           marker.append(
@@ -611,11 +671,33 @@ function App() {
               background: isGrid ? "#25f4d0" : "#ff3ca6",
               borderColor: "#081014",
               glyphColor: "#081014",
-              glyphText: isGrid ? "G" : "D",
+              glyphText: isGrid ? "A" : "B",
               scale: 1.15,
             }),
           );
           googleEndpointMarkers.current.push(marker);
+          add(marker);
+        });
+      if (officialContextVisible && Marker3DElement && PinElement)
+        officialPointAssets.forEach((feature) => {
+          const [lng, lat] = feature.geometry.coordinates;
+          const kind = String(feature.properties.kind ?? "Official asset");
+          const marker = new Marker3DElement({
+            position: { lat, lng },
+            altitudeMode: "CLAMP_TO_GROUND",
+            collisionBehavior: "OPTIONAL_AND_HIDES_LOWER_PRIORITY",
+            title: `${kind}: ${String(feature.properties.name ?? "Unnamed")}`,
+          });
+          marker.dataset.gridpathOfficial = "true";
+          marker.append(
+            new PinElement({
+              background: "#8061b5",
+              borderColor: "#160f24",
+              glyphColor: "#f3effa",
+              glyphText: kind === "Unterwerk" ? "S" : "H",
+              scale: 0.62,
+            }),
+          );
           add(marker);
         });
       if (!alternatives || !selectedPlan || !corridorDesignVisible) return;
@@ -684,6 +766,8 @@ function App() {
     corridorGroups,
     selectedRouteVisible,
     visibleCorridorGroups,
+    officialContextVisible,
+    officialPointAssets,
   ]);
   useEffect(() => {
     const scene = googleMap.current;
@@ -878,6 +962,85 @@ function App() {
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
+    const layerIds = [
+      "official-grid-cables",
+      "official-grid-overhead",
+      "official-grid-substations",
+      "official-grid-hydro",
+    ];
+    layerIds.forEach((id) => {
+      if (instance.getLayer(id)) instance.removeLayer(id);
+    });
+    if (instance.getSource("official-grid-context"))
+      instance.removeSource("official-grid-context");
+    if (!officialContext || !officialContextVisible) return;
+    instance.addSource("official-grid-context", {
+      type: "geojson",
+      data: officialContext,
+    });
+    const before = instance.getLayer("routes-underlay") ? "routes-underlay" : undefined;
+    instance.addLayer({
+      id: "official-grid-cables",
+      type: "line",
+      source: "official-grid-context",
+      filter: ["==", ["get", "installation"], "Kabelleitung"],
+      paint: {
+        "line-color": "#8061b5",
+        "line-width": 2,
+        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.35, 0.68],
+        "line-dasharray": [1.4, 1.2],
+      },
+    } as maplibregl.LineLayerSpecification, before);
+    instance.addLayer({
+      id: "official-grid-overhead",
+      type: "line",
+      source: "official-grid-context",
+      filter: ["==", ["get", "installation"], "Freileitung"],
+      paint: {
+        "line-color": "#8061b5",
+        "line-width": 1.6,
+        "line-opacity": ["case", ["==", ["get", "status"], "Geplant"], 0.35, 0.62],
+      },
+    } as maplibregl.LineLayerSpecification, before);
+    instance.addLayer({
+      id: "official-grid-substations",
+      type: "circle",
+      source: "official-grid-context",
+      filter: ["==", ["get", "kind"], "Unterwerk"],
+      paint: {
+        "circle-radius": 5,
+        "circle-color": "#8061b5",
+        "circle-stroke-color": "#150f22",
+        "circle-stroke-width": 1.5,
+      },
+    } as maplibregl.CircleLayerSpecification, before);
+    instance.addLayer({
+      id: "official-grid-hydro",
+      type: "circle",
+      source: "official-grid-context",
+      filter: ["==", ["get", "kind"], "Wasserkraftwerk"],
+      paint: {
+        "circle-radius": 4.5,
+        "circle-color": "#a686d4",
+        "circle-stroke-color": "#150f22",
+        "circle-stroke-width": 1.5,
+      },
+    } as maplibregl.CircleLayerSpecification, before);
+    const selectAsset = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0];
+      if (feature?.geometry.type === "Point")
+        setSelectedOfficialAsset(feature as OfficialAsset);
+    };
+    instance.on("click", "official-grid-substations", selectAsset);
+    instance.on("click", "official-grid-hydro", selectAsset);
+    return () => {
+      instance.off("click", "official-grid-substations", selectAsset);
+      instance.off("click", "official-grid-hydro", selectAsset);
+    };
+  }, [mapReady, officialContext, officialContextVisible]);
+  useEffect(() => {
+    if (!mapReady || !map.current) return;
+    const instance = map.current;
     const handler = (event: maplibregl.MapMouseEvent) => {
       if (!placementMode || event.originalEvent.defaultPrevented) return;
       const point: GeoPoint = {
@@ -957,6 +1120,23 @@ function App() {
         "circle-stroke-width": 2.2,
       },
     });
+    if (endpoints.length === 2)
+      instance.addLayer({
+        id: "selection-labels",
+        type: "symbol",
+        source: "gridpath-selection",
+        layout: {
+          "text-field": ["match", ["get", "endpoint_id"], "grid_connection", "Point A", "Point B"],
+          "text-size": 10,
+          "text-offset": [0, -1.45],
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#eaf5fb",
+          "text-halo-color": "#071014",
+          "text-halo-width": 1.25,
+        },
+      } as maplibregl.SymbolLayerSpecification);
     if (
       placementMode === "proposed_development" &&
       draftEndpoints.grid_connection
@@ -1218,7 +1398,11 @@ function App() {
       point
         ? {
             type: "Feature" as const,
-            properties: { feature_type: "selected_endpoint", endpoint_id: id },
+            properties: {
+              feature_type: "selected_endpoint",
+              endpoint_id: id,
+              display_label: id === "grid_connection" ? "Point A" : "Point B",
+            },
             geometry: point,
           }
         : null;
@@ -1257,6 +1441,16 @@ function App() {
         geometry: point,
       }),
     );
+    const officialFeatures =
+      officialContextVisible && officialContext
+        ? officialContext.features.map((feature) => ({
+            ...feature,
+            properties: {
+              ...feature.properties,
+              feature_type: "official_grid_context",
+            },
+          }))
+        : [];
     const featureCollection: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
       features: [
@@ -1274,6 +1468,7 @@ function App() {
         },
         ...connectorFeatures,
         ...snappedFeatures,
+        ...officialFeatures,
       ],
       properties: {
         study_area_identifier: scenario.metadata.scenario_name,
@@ -1284,6 +1479,20 @@ function App() {
           right_of_way_width_m: rightOfWayWidth,
           endpoint_mode: selectedPlan.endpoint_mode,
         },
+        official_grid_context: officialContext
+          ? {
+              displayed_in_export: officialContextVisible,
+              operator_territory: officialContext.properties.operator_territory,
+              nearest_published_asset: nearestOfficialPointAsset
+                ? {
+                    name: nearestOfficialPointAsset.feature.properties.name,
+                    distance_from_point_a_m: Math.round(nearestOfficialPointAsset.distance),
+                  }
+                : null,
+              provenance: officialContext.properties.provenance,
+              disclaimer: officialContext.properties.disclaimer,
+            }
+          : null,
         disclaimer:
           "Planning prototype only. This assessment is not a regulatory-compliance determination or construction-ready alignment.",
       },
@@ -1329,7 +1538,7 @@ function App() {
           <div className="agent-heading">
             <span className="agent-mark">GP</span>
             <div>
-              <h2>N! Grid Connection Planner</h2>
+              <h2>N! Corridor Planner</h2>
               <p>Your agentic corridor planner</p>
             </div>
           </div>
@@ -1344,21 +1553,21 @@ function App() {
               <div className="connection-card">
                 <span>Connection setup</span>
                 <p>
-                  Select two locations within 1 km. GridPath screens
-                  street-based underground connection alternatives between them.
+                  Select any two planning locations within 1 km. GridPath compares
+                  evidence-based underground corridor options between them.
                 </p>
                 <div className="endpoint-actions">
                   <button
                     type="button"
                     onClick={() => startPlacement("grid_connection")}
                   >
-                    Choose grid connection
+                    Choose Point A
                   </button>
                   <button
                     type="button"
                     onClick={() => startPlacement("proposed_development")}
                   >
-                    Choose development
+                    Choose Point B
                   </button>
                   <button type="button" onClick={resetDemo}>
                     Reset demo points
@@ -1384,12 +1593,12 @@ function App() {
                 </dl>
                 {placementMode === "grid_connection" ? (
                   <div className="placement-message">
-                    Click the map to place the representative grid connection.
+                    Click the map to place Point A.
                     Press Escape to cancel.
                   </div>
                 ) : placementMode === "proposed_development" ? (
                   <div className="placement-message">
-                    Now click the map to place the proposed development. Press
+                    Now click the map to place Point B. Press
                     Escape to cancel.
                   </div>
                 ) : null}
@@ -1401,10 +1610,29 @@ function App() {
                 ) : null}
               </div>
               <div className="intro-card">
-                Place a representative connection and a proposed development.
-                GridPath deterministically screens mapped street corridors and
-                returns comparable planning alternatives.
+                Select any two planning locations within 1 km. GridPath compares
+                evidence-based underground corridor options between them.
               </div>
+              {officialContext ? (
+                <div className="constraint-card official-context-card">
+                  <details>
+                    <summary>Official context</summary>
+                    <dl>
+                      <div><dt>Network operator</dt><dd>EKZ</dd></div>
+                      <div><dt>Published assets in study area</dt><dd>0</dd></div>
+                      <div><dt>Published assets within 2 km</dt><dd>24</dd></div>
+                    </dl>
+                    {nearestOfficialPointAsset ? (
+                      <p>
+                        <strong>{String(nearestOfficialPointAsset.feature.properties.name)}</strong>
+                        {` · ${Math.round(nearestOfficialPointAsset.distance)} m from Point A`}<br />
+                        {`${String(nearestOfficialPointAsset.feature.properties.status)} ${String(nearestOfficialPointAsset.feature.properties.kind).toLowerCase()} · ${(nearestOfficialPointAsset.feature.properties.voltage_kv as number[]).join("/")} kV · ${String(nearestOfficialPointAsset.feature.properties.owner)}`}
+                      </p>
+                    ) : null}
+                    <small>Published network context only. Capacity and connection availability require confirmation from the network operator.</small>
+                  </details>
+                </div>
+              ) : null}
               <div className="constraint-card">
                 <span>Prepared layers</span>
                 <dl>
@@ -1548,6 +1776,21 @@ function App() {
         <MapErrorBoundary>
           <div className="map-stage">
             <div ref={mapContainer} className="map" />
+            {selectedOfficialAsset ? (
+              <aside className="official-asset-popover" aria-label="Official asset details">
+                <button type="button" onClick={() => setSelectedOfficialAsset(null)} aria-label="Close official asset details">×</button>
+                <strong>{String(selectedOfficialAsset.properties.name ?? "Unnamed published asset")}</strong>
+                <span>{String(selectedOfficialAsset.properties.kind ?? "Published asset")}</span>
+                <dl>
+                  <div><dt>Owner</dt><dd>{String(selectedOfficialAsset.properties.owner ?? "Not published")}</dd></div>
+                  <div><dt>Voltage</dt><dd>{Array.isArray(selectedOfficialAsset.properties.voltage_kv) ? `${(selectedOfficialAsset.properties.voltage_kv as number[]).join("/")} kV` : "Not published"}</dd></div>
+                  <div><dt>Status</dt><dd>{String(selectedOfficialAsset.properties.status ?? "Not published")}</dd></div>
+                  <div><dt>Cable / overhead</dt><dd>{String(selectedOfficialAsset.properties.installation ?? "Not applicable")}</dd></div>
+                  <div><dt>From Point A</dt><dd>{selectedOfficialDistances?.pointA === null ? "—" : `${Math.round(selectedOfficialDistances?.pointA ?? 0)} m`}</dd></div>
+                  <div><dt>From Point B</dt><dd>{selectedOfficialDistances?.pointB === null ? "—" : `${Math.round(selectedOfficialDistances?.pointB ?? 0)} m`}</dd></div>
+                </dl>
+              </aside>
+            ) : null}
             <div className="map-view-controls">
               <div className="view-toggle" role="group" aria-label="Map view">
                 <button
@@ -1607,8 +1850,19 @@ function App() {
                 </button>
               ))}
               <span><i className="row" /> Selected corridor</span>
-              <span><i className="origin" /> Grid point</span>
-              <span><i className="destination" /> Development point</span>
+              <span><i className="origin" /> Point A</span>
+              <span><i className="destination" /> Point B</span>
+              <button
+                type="button"
+                className={`legend-layer official-context-toggle ${officialContextVisible ? "active" : ""}`}
+                aria-pressed={officialContextVisible}
+                onClick={() => {
+                  setOfficialContextVisible((visible) => !visible);
+                  setSelectedOfficialAsset(null);
+                }}
+              >
+                <i className="official-grid" /> Official grid context
+              </button>
             </div>
           </div>
         </MapErrorBoundary>

@@ -180,9 +180,12 @@ def test_outside_exclusion_and_remote_street_points_are_rejected() -> None:
     outside = client.post("/api/plan", json=custom_payload(grid_connection={"type": "Point", "coordinates": [8.404, 47.394]}))
     assert outside.status_code == 422
     assert outside.json()["detail"]["code"] == "ENDPOINT_OUTSIDE_STUDY_AREA"
-    building = client.post("/api/plan", json=custom_payload(grid_connection=point_inside("buildings")))
-    assert building.status_code == 422
-    assert building.json()["detail"]["code"] == "ENDPOINT_IN_BUILDING"
+    building = client.post(
+        "/api/plan",
+        json={"scenario_id": SCENARIO_ID, "grid_connection": point_inside("buildings")},
+    )
+    assert building.status_code == 200
+    assert building.json()["endpoint_mode"] == "user_selected"
     water = client.post("/api/plan", json=custom_payload(grid_connection=point_inside("water")))
     assert water.status_code == 422
     assert water.json()["detail"]["code"] == "ENDPOINT_IN_WATER"
