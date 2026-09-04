@@ -73,10 +73,13 @@ type OfficialContext = GeoJSON.FeatureCollection & {
 };
 type OfficialAsset = GeoJSON.Feature<GeoJSON.Point, Record<string, unknown>>;
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-const googleMapsKey = (
+const viteEnv = (
   import.meta as ImportMeta & { env?: Record<string, string> }
-).env?.VITE_GOOGLE_MAPS_API_KEY;
+).env;
+const apiBaseUrl = (
+  (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? ""
+).replace(/\/$/, "");
+const googleMapsKey = viteEnv?.VITE_GOOGLE_MAPS_API_KEY;
 const googleMapsConfigured = Boolean(googleMapsKey);
 const routeMeta: Record<
   Strategy,
@@ -784,6 +787,7 @@ function App() {
     selectedRouteVisible,
     visibleCorridorGroups,
     officialContextVisible,
+    officialContext,
     officialPointAssets,
     selectedOfficialAsset,
   ]);
