@@ -358,7 +358,7 @@ def alternatives(
     from app.endpoint_selection import resolve_endpoints, response_endpoint_fields
     from app.road_graph import load_road_edges
     from app.road_graph import metric as to_metric
-    from app.route_candidates import candidate_pool, edge_cost
+    from app.route_candidates import candidate_pool, edge_cost, is_continuous_candidate
     from app.route_metrics import line_from_edges, metrics, shared_edge_percentage
 
     if request.scenario_id != scenario_id:
@@ -366,6 +366,7 @@ def alternatives(
     buildings = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "buildings"])
     environmental = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "environmental_sensitivity"])
     water = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "water"])
+    protected = unary_union([to_metric(shape(feature["geometry"])) for feature in features if feature["properties"]["layer"] == "statutory_protected"])
     edges = load_road_edges(features)
     endpoint_selection = resolve_endpoints(features, request, edges)
     endpoints = endpoint_selection.points
@@ -379,9 +380,11 @@ def alternatives(
 
     evaluated: list[dict[str, Any]] = []
     for candidate in candidates:
+        if not is_continuous_candidate(candidate.edges):
+            continue
         line = line_from_edges(candidate.edges)
         corridor = line.buffer(request.corridor_width_m / 2)
-        if corridor.intersects(buildings):
+        if not line.is_valid or not corridor.is_valid or corridor.intersects(buildings) or (not protected.is_empty and corridor.intersects(protected)):
             continue
         values = metrics(candidate.edges, line, corridor, environmental, water)
         evaluated.append({
@@ -402,25 +405,30 @@ def alternatives(
         key=lambda item: (
             item["values"]["environmental_overlap_m2"],
             item["values"]["water_crossings"],
+            item["values"]["major_road_exposure_m"],
             item["values"]["length_m"],
             item["candidate"].rank,
         ),
     )
     constructability_pool = [
-        item for item in evaluated if item["values"]["length_m"] <= shortest_length * 1.25 + 0.1
+        item for item in evaluated if item["values"]["length_m"] <= shortest_length * 1.35 + 0.1
     ]
     constructability = min(
         constructability_pool,
         key=lambda item: (
-            item["tunnels"], item["bridges"], item["values"]["water_crossings"],
-            item["values"]["major_road_exposure_m"], item["values"]["turn_count"],
-            item["values"]["environmental_overlap_m2"], item["values"]["length_m"], item["candidate"].rank,
+            item["values"]["road_tunnel_exposure_m"],
+            item["values"]["road_bridge_exposure_m"],
+            item["values"]["major_road_exposure_m"],
+            item["values"]["water_crossings"],
+            item["values"]["turn_count"],
+            start_distance + end_distance,
+            item["values"]["length_m"], item["candidate"].rank,
         ),
     )
     selected = [("shortest", shortest["candidate"]), ("environmental", environment["candidate"]), ("constructability", constructability["candidate"])]
     evaluation_by_rank = {item["candidate"].rank: item for item in evaluated}
     environment_note = (
-        "Lowest measured environmental and water impact: "
+        "Lowest-impact distinct mapped-corridor alternative: "
         f"{environment['values']['environmental_overlap_m2']} m² overlap and "
         f"{environment['values']['water_crossings']} water crossings."
         if environment is not shortest

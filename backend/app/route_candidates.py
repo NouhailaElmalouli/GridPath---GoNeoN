@@ -11,7 +11,7 @@ import networkx as nx
 from app.road_graph import RoadEdge, undirected_graph
 
 MAJOR_ROADS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"}
-RESTRICTED_ACCESS = {"private", "no", "destination"}
+RESTRICTED_ACCESS = {"private", "no"}
 LOCAL_ROADS = {"service", "residential", "living_street", "unclassified", "tertiary", "secondary"}
 
 
@@ -20,6 +20,17 @@ class Candidate:
     edges: list[RoadEdge]
     rank: int
     generation_strategy: str
+
+
+def is_continuous_candidate(edges: list[RoadEdge]) -> bool:
+    """Reject repeated physical edges, loops, and disconnected edge chains."""
+    if not edges or len({edge.original_edge_id or edge.edge_id for edge in edges}) != len(edges):
+        return False
+    return all(
+        {left.source, left.target} & {right.source, right.target}
+        and left.geometry.distance(right.geometry) <= 1e-6
+        for left, right in zip(edges, edges[1:], strict=False)
+    )
 
 
 def _crossings(edge: RoadEdge, water: Any) -> int:
@@ -72,7 +83,7 @@ def candidate_pool(
         for path in _paths(graph, start, end):
             path_edges = [graph.edges[a, b]["edge"] for a, b in zip(path, path[1:], strict=False)]
             key = tuple(edge.edge_id for edge in path_edges)
-            if key in seen:
+            if key in seen or not is_continuous_candidate(path_edges):
                 continue
             seen.add(key)
             result.append(Candidate(path_edges, len(result) + 1, strategy))
@@ -98,7 +109,7 @@ def candidate_pool(
             path_edges = [graph.edges[a, b]["edge"] for a, b in zip(path, path[1:], strict=False)]
             key = tuple(edge.edge_id for edge in path_edges)
             used.update(key)
-            if key not in seen:
+            if key not in seen and is_continuous_candidate(path_edges):
                 seen.add(key)
                 result.append(Candidate(path_edges, len(result) + 1, f"{strategy}_diversified"))
                 if len(result) >= limit:

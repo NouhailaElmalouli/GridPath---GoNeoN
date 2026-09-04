@@ -48,13 +48,17 @@ def metrics(
     water_crossings = sum(
         1 for geometry in getattr(water, "geoms", [water]) if line.intersects(geometry)
     )
-    bridge_tunnel = sum(edge.length_m for edge in edges if edge.bridge or edge.tunnel)
+    bridge_length = sum(edge.length_m for edge in edges if edge.bridge)
+    tunnel_length = sum(edge.length_m for edge in edges if edge.tunnel)
+    bridge_tunnel = bridge_length + tunnel_length
     major = sum(edge.length_m for edge in edges if edge.highway in MAJOR_ROADS)
     return {
         "length_m": round(line.length, 1),
         "environmental_overlap_m2": round(environmental_overlap, 1),
         "water_crossings": water_crossings,
         "bridge_tunnel_exposure_m": round(bridge_tunnel, 1),
+        "road_bridge_exposure_m": round(bridge_length, 1),
+        "road_tunnel_exposure_m": round(tunnel_length, 1),
         "major_road_exposure_m": round(major, 1),
         "turn_count": turn_count(line),
     }

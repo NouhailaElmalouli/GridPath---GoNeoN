@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 import math
 from enum import StrEnum
 
@@ -90,6 +91,49 @@ class Wgs84Point(BaseModel):
         return value
 
 
+class Wgs84Polygon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    coordinates: list[list[tuple[float, float]]]
+
+    @field_validator("type")
+    @classmethod
+    def require_polygon(cls, value: str) -> str:
+        if value != "Polygon":
+            raise ValueError("Area geometry type must be Polygon")
+        return value
+
+    @field_validator("coordinates")
+    @classmethod
+    def require_wgs84(cls, value: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+        if not value or len(value[0]) < 4:
+            raise ValueError("Area polygon requires a closed exterior ring")
+        for ring in value:
+            for longitude, latitude in ring:
+                if not math.isfinite(longitude) or not math.isfinite(latitude) or not -180 <= longitude <= 180 or not -90 <= latitude <= 90:
+                    raise ValueError("Area coordinates must be finite WGS84 longitude/latitude")
+        return value
+
+
+class AreaScreenRequest(BaseModel):
+    scenario_id: str
+    area: Wgs84Polygon | None = None
+    building_clearance_m: float = Field(default=25, ge=0, le=100)
+    right_of_way_width_m: float = Field(default=4, ge=2, le=80)
+
+
+class AreaScreenResponse(BaseModel):
+    selected_area: dict[str, object]
+    segments: dict[str, object]
+    total_kilometres_screened: float
+    category_summary: dict[str, dict[str, float | int]]
+    aggregated_impacts: dict[str, float | int]
+    opportunity_zones: list[dict[str, object]]
+    scoring_assumptions: list[str]
+    limitations: list[str]
+
+
 class PlanRequest(BaseModel):
     scenario_id: str
     building_clearance_m: float = Field(default=25, ge=0, le=100)
@@ -133,6 +177,10 @@ class PlanResponse(BaseModel):
     water_crossing_count: int
     bridge_tunnel_exposure_m: float
     major_road_exposure_m: float
+    road_bridge_segments_m: float = 0
+    road_tunnel_segments_m: float = 0
+    major_road_exposure_label: str = "Major-road exposure"
+    water_crossings_requiring_specialist_review: int = 0
     turn_count: int
     street_network_percentage: float
     edge_ids: list[str]

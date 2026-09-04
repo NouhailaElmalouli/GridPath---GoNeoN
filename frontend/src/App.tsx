@@ -192,6 +192,7 @@ function App() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const googleMap = useRef<HTMLElement | null>(null);
+  const googleEndpointMarkers = useRef<HTMLElement[]>([]);
   const googleLibrary = useRef<Record<
     string,
     new (options: Record<string, unknown>) => HTMLElement
@@ -455,7 +456,9 @@ function App() {
           range: 1900,
           tilt: 65,
           heading: -28,
-          mode: "HYBRID",
+          // Satellite mode keeps the photorealistic context while removing the
+          // provider's POI and minor-road label layer from the 3D comparison.
+          mode: "SATELLITE",
           defaultUIHidden: true,
         });
         googleMap.current = scene;
@@ -504,8 +507,13 @@ function App() {
     const library = googleLibrary.current;
     if (!scene || !library || !scenario) return;
     try {
+      googleEndpointMarkers.current.forEach((marker) => marker.remove());
+      googleEndpointMarkers.current = [];
       scene
-        .querySelectorAll("[data-gridpath-overlay]")
+        .querySelectorAll("[data-gridpath-overlay], gmp-marker-3d")
+        .forEach((element) => element.remove());
+      document
+        .querySelectorAll("gmp-marker-3d[data-gridpath-endpoint]")
         .forEach((element) => element.remove());
       const add = (element: HTMLElement) => {
         element.dataset.gridpathOverlay = "true";
@@ -542,7 +550,16 @@ function App() {
       const study = scenario.layers.features.find(
         (feature) => feature.properties?.layer === "study_area",
       );
-      if (study?.geometry) addLine(study.geometry, "#25f4d0", 2);
+      if (study?.geometry?.type === "Polygon")
+        addLine(
+          { type: "LineString", coordinates: study.geometry.coordinates[0] },
+          "#25f4d0",
+          3,
+        );
+      if (study?.geometry?.type === "MultiPolygon")
+        study.geometry.coordinates.forEach((polygon) =>
+          addLine({ type: "LineString", coordinates: polygon[0] }, "#25f4d0", 3),
+        );
       const Marker3DElement = library.Marker3DElement;
       const PinElement = library.PinElement;
       if (Marker3DElement && PinElement)
@@ -557,6 +574,7 @@ function App() {
               ? "Representative grid connection"
               : "Proposed development",
           });
+          marker.dataset.gridpathEndpoint = "true";
           marker.append(
             new PinElement({
               background: isGrid ? "#25f4d0" : "#ff3ca6",
@@ -566,6 +584,7 @@ function App() {
               scale: 1.15,
             }),
           );
+          googleEndpointMarkers.current.push(marker);
           add(marker);
         });
       if (!alternatives || !selectedPlan || !corridorDesignVisible) return;
@@ -767,10 +786,21 @@ function App() {
       "line-opacity": 0.48,
     });
     layer(
+      "scenario-study-area-halo",
+      "line",
+      ["==", ["get", "layer"], "study_area"],
+      { "line-color": "#061015", "line-width": 7, "line-opacity": 0.78 },
+    );
+    layer(
       "scenario-study-area-outline",
       "line",
       ["==", ["get", "layer"], "study_area"],
-      { "line-color": "#dbe3ea", "line-width": 1, "line-opacity": 0.28 },
+      {
+        "line-color": "#25f4d0",
+        "line-width": 2.25,
+        "line-opacity": 0.94,
+        "line-dasharray": [2, 1.4],
+      },
     );
   }, [mapReady, scenario]);
   useEffect(() => {
@@ -871,7 +901,6 @@ function App() {
           type: "Feature",
           properties: {
             endpoint_id: id,
-            label: id === "grid_connection" ? "Grid connection" : "Development",
           },
           geometry: point,
         })),
@@ -894,24 +923,6 @@ function App() {
         "circle-stroke-width": 2.2,
       },
     });
-    if (endpoints.length === 2)
-      instance.addLayer({
-        id: "selection-labels",
-        type: "symbol",
-        source: "gridpath-selection",
-        layout: {
-          "text-field": ["get", "label"],
-          "text-size": 11,
-          "text-offset": [0, 1.3],
-          "text-anchor": "top",
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": "#fff",
-          "text-halo-color": "#071014",
-          "text-halo-width": 2,
-        },
-      } as maplibregl.SymbolLayerSpecification);
     if (
       placementMode === "proposed_development" &&
       draftEndpoints.grid_connection

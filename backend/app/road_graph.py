@@ -12,7 +12,8 @@ from shapely.geometry import LineString, Point, shape
 from shapely.ops import substring, transform
 
 WGS84_TO_METRIC = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
-PEDESTRIAN_ONLY = {"footway", "path", "steps", "pedestrian", "bridleway", "corridor"}
+PEDESTRIAN_ONLY = {"footway", "path", "steps", "pedestrian", "bridleway", "corridor", "cycleway"}
+INACCESSIBLE_ACCESS = {"private", "no"}
 
 
 class RoadGraphError(ValueError):
@@ -60,7 +61,7 @@ def load_road_edges(features: list[dict[str, Any]]) -> list[RoadEdge]:
             raise RoadGraphError(f"Road edge {edge_id} is duplicated.")
         identifiers.add(edge_id)
         highway = str(properties["highway"])
-        if highway in PEDESTRIAN_ONLY:
+        if highway in PEDESTRIAN_ONLY or str(properties["access"]).lower() in INACCESSIBLE_ACCESS:
             continue
         bridge = str(properties["bridge"]).lower() not in {"", "no", "false", "0"}
         tunnel = str(properties["tunnel"]).lower() not in {"", "no", "false", "0"}

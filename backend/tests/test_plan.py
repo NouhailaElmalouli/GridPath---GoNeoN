@@ -232,3 +232,27 @@ def test_strategy_winners_match_measured_objectives_for_demo_and_custom_pairs() 
         assert constructability["turn_count"] <= shortest["turn_count"]
         assert constructability["environmental_sensitivity_overlap_m2"] <= shortest["environmental_sensitivity_overlap_m2"]
         assert constructability["strategy_note"]
+
+
+def test_area_screen_is_deduplicated_deterministic_and_scored() -> None:
+    client = TestClient(app)
+    payload = {"scenario_id": SCENARIO_ID, "right_of_way_width_m": 4}
+    first = client.post("/api/screen/area", json=payload)
+    second = client.post("/api/screen/area", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    body = first.json()
+    segments = body["segments"]["features"]
+    assert len(segments) == len({item["properties"]["edge_id"] for item in segments})
+    assert {item["properties"]["category"] for item in segments} <= {"preferred", "viable", "constrained", "excluded"}
+    assert all(0 <= item["properties"]["score"] <= 100 for item in segments)
+    assert len(body["opportunity_zones"]) == 3
+
+
+def test_area_screen_rejects_polygon_outside_prepared_boundary() -> None:
+    response = TestClient(app).post("/api/screen/area", json={
+        "scenario_id": SCENARIO_ID,
+        "area": {"type": "Polygon", "coordinates": [[[8.3, 47.3], [8.31, 47.3], [8.31, 47.31], [8.3, 47.3]]]},
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "AREA_OUTSIDE_STUDY_AREA"
