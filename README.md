@@ -6,7 +6,7 @@ It demonstrates how a user can select two planning locations and rapidly screen 
 
 ## Live MVP
 
-[Hosted GridPath application]
+Hosted GridPath application: https://gridpath-six.vercel.app/
 
 For usage instructions, see [INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
