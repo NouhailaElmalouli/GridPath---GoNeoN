@@ -445,20 +445,26 @@ function App() {
       Object.values(displayedEndpoints).map((point) => point?.coordinates),
     );
     if (!routeBounds || !endpointBounds) return;
+    const officialBounds =
+      officialContextVisible && nearestOfficialPointAsset
+        ? boundsFromCoordinates([
+            nearestOfficialPointAsset.feature.geometry.coordinates,
+          ])
+        : null;
     fitMap(
       [
         [
-          Math.min(routeBounds[0][0], endpointBounds[0][0]),
-          Math.min(routeBounds[0][1], endpointBounds[0][1]),
+          Math.min(routeBounds[0][0], endpointBounds[0][0], officialBounds?.[0][0] ?? Infinity),
+          Math.min(routeBounds[0][1], endpointBounds[0][1], officialBounds?.[0][1] ?? Infinity),
         ],
         [
-          Math.max(routeBounds[1][0], endpointBounds[1][0]),
-          Math.max(routeBounds[1][1], endpointBounds[1][1]),
+          Math.max(routeBounds[1][0], endpointBounds[1][0], officialBounds?.[1][0] ?? -Infinity),
+          Math.max(routeBounds[1][1], endpointBounds[1][1], officialBounds?.[1][1] ?? -Infinity),
         ],
       ],
       16.1,
     );
-  }, [alternatives, displayedEndpoints, fitMap, scenario]);
+  }, [alternatives, displayedEndpoints, fitMap, scenario, officialContextVisible, nearestOfficialPointAsset]);
   const clearResults = useCallback(() => {
     setAlternatives(null);
     setValidatedEndpoints({});
@@ -722,7 +728,10 @@ function App() {
         scene.setAttribute("center", `${latitude},${longitude},0`);
         scene.setAttribute(
           "range",
-          `${Math.max(1900, Math.min(3000, span * 220000))}`,
+          `${Math.max(
+            officialContextVisible ? 2300 : 1900,
+            Math.min(officialContextVisible ? 3600 : 3000, span * 220000),
+          )}`,
         );
         scene.setAttribute("tilt", "55");
         scene.setAttribute("heading", "-28");
