@@ -427,6 +427,22 @@ textarea {
   font-size: 11px;
   line-height: 1.5;
 }
+.agent-panel .export-assessment {
+  display: inline-flex;
+  justify-content: center;
+  align-self: flex-start;
+  padding: 9px 13px;
+  color: #bffcff;
+  background: #10222a;
+  border: 1px solid #27bfc9;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.export-message {
+  margin: -3px 0 0;
+  color: #65efc6;
+  font-size: 11px;
+}
 .disclaimer {
   margin-top: auto;
   color: #5f6876;
@@ -570,6 +586,14 @@ textarea {
   font-weight: 800;
   cursor: pointer;
 }
+.corridor-pills .legend-layer {
+  cursor: pointer;
+  color: #c8d4dd;
+  text-align: left;
+}
+.corridor-pills .legend-layer:not(.active) {
+  opacity: 0.44;
+}
 .corridor-pills .row { border-radius: 1px; background: rgba(236,244,248,.88); }
 .corridor-pills .connector { width: 17px; height: 3px; border-radius: 0; background: #7c91a8; }
 .corridor-pills .constraints { border-radius: 1px; background: #53708d; }
@@ -628,6 +652,7 @@ textarea {
 }
 .legend .route-shortest,
 .legend .route-environment,
+.legend .route-environmental,
 .legend .route-constructability {
   width: 17px;
   height: 4px;

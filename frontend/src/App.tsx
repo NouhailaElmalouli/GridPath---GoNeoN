@@ -39,6 +39,7 @@ type PlanAlternative = {
   tunnel_count: number;
   road_bridge_segments_m: number;
   road_tunnel_segments_m: number;
+  major_road_exposure_m: number;
   turn_count: number;
   candidate_rank: number;
   pairwise_overlap: Record<string, number>;
@@ -222,6 +223,12 @@ function App() {
   // Compact analytical ribbon, not a construction specification.
   const [rightOfWayWidth, setRightOfWayWidth] = useState(4);
   const [corridorDesignVisible, setCorridorDesignVisible] = useState(true);
+  const [visibleStrategies, setVisibleStrategies] = useState<Record<Strategy, boolean>>({
+    shortest: true,
+    environmental: true,
+    constructability: true,
+  });
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({
     buildings: true,
     statutory_protected: true,
@@ -249,7 +256,43 @@ function App() {
     corridorGroups[0] ??
     null;
   const selectedPlan = selectedCorridor?.representative ?? null;
-  const strategiesConverged = corridorGroups.length === 1;
+  const shortestPlan = useMemo(
+    () => alternatives?.alternatives.find((item) => item.strategy === "shortest") ?? null,
+    [alternatives],
+  );
+  const cardTradeoff = useCallback(
+    (plan: PlanAlternative): string => {
+      if (plan.strategy === "shortest") return "Fastest connection.";
+      if (!shortestPlan) return routeMeta[plan.strategy].note;
+      const lengthDelta = plan.route_length_m - shortestPlan.route_length_m;
+      const lengthText = `${lengthDelta >= 0 ? "+" : ""}${lengthDelta.toFixed(1)} m`;
+      if (plan.strategy === "environmental") {
+        const overlapReduction =
+          shortestPlan.environmental_sensitivity_overlap_m2 -
+          plan.environmental_sensitivity_overlap_m2;
+        return overlapReduction > 0
+          ? `${overlapReduction.toFixed(1)} m² less environmental overlap · ${lengthText}.`
+          : `No lower environmental overlap · ${lengthText}.`;
+      }
+      const turnReduction = shortestPlan.turn_count - plan.turn_count;
+      return turnReduction > 0
+        ? `${turnReduction} fewer turns · ${lengthText}.`
+        : `No fewer turns · ${lengthText}.`;
+    },
+    [shortestPlan],
+  );
+  const visibleCorridorGroups = useMemo(
+    () =>
+      corridorGroups.filter((group) =>
+        group.alternatives.some((item) => visibleStrategies[item.strategy]),
+      ),
+    [corridorGroups, visibleStrategies],
+  );
+  const selectedRouteVisible = Boolean(
+    selectedCorridor?.alternatives.some(
+      (item) => visibleStrategies[item.strategy],
+    ),
+  );
   const demoEndpoints = useMemo<Endpoints>(() => {
     if (!scenario) return {};
     return Object.fromEntries(
@@ -459,8 +502,8 @@ function App() {
           range: 1900,
           tilt: 65,
           heading: -28,
-          // HYBRID is the supported photorealistic mode for the route overlays.
-          mode: "HYBRID",
+          // SATELLITE keeps the photorealistic context without provider POI labels.
+          mode: "SATELLITE",
           defaultUIHidden: true,
         });
         googleMap.current = scene;
@@ -538,30 +581,16 @@ function App() {
             altitudeMode: "RELATIVE_TO_GROUND",
             drawsOccludedSegments: true,
             outerColor: "#071014",
-            // Maps3D takes normalized line widths (0–1), unlike MapLibre
-            // pixel widths. Supplying MapLibre values here caused the scene
-            // render to reject the overlay and be replaced by an error state.
-            outerWidth: 0.5,
+            // Google Maps 3D uses pixel stroke widths; outerWidth is a fraction.
+            outerWidth: width >= 8 ? 0.5 : width >= 3 ? 0.42 : 0.2,
             strokeColor: color,
-            // Maps3D normalizes this field to 0–1. 0.8 is the visual
-            // equivalent of the requested prominent 6–8 px selected line.
-            strokeWidth: width >= 8 ? 0.8 : 0.42,
+            strokeWidth: width >= 8 ? 9 : width >= 3 ? 5 : 1,
+            zIndex: width >= 8 ? 20 : 10,
           }),
         );
       };
-      const study = scenario.layers.features.find(
-        (feature) => feature.properties?.layer === "study_area",
-      );
-      if (study?.geometry?.type === "Polygon")
-        addLine(
-          { type: "LineString", coordinates: study.geometry.coordinates[0] },
-          "#25f4d0",
-          3,
-        );
-      if (study?.geometry?.type === "MultiPolygon")
-        study.geometry.coordinates.forEach((polygon) =>
-          addLine({ type: "LineString", coordinates: polygon[0] }, "#25f4d0", 3),
-        );
+      // Deliberately omit the study-area outline in photorealistic 3D: it is
+      // available in 2D but distracts from the corridor comparison here.
       const Marker3DElement = library.Marker3DElement;
       const PinElement = library.PinElement;
       if (Marker3DElement && PinElement)
@@ -590,7 +619,7 @@ function App() {
           add(marker);
         });
       if (!alternatives || !selectedPlan || !corridorDesignVisible) return;
-      for (const group of corridorGroups)
+      for (const group of visibleCorridorGroups)
         addLine(
           group.representative.centreline,
           routeMeta[group.representative.strategy].color,
@@ -616,7 +645,7 @@ function App() {
         scene.setAttribute("tilt", "55");
         scene.setAttribute("heading", "-28");
       }
-      if (selectedPlan.right_of_way.type === "Polygon") {
+      if (selectedRouteVisible && selectedPlan.right_of_way.type === "Polygon") {
         const Polygon3DElement = library.Polygon3DElement;
         add(
           new Polygon3DElement({
@@ -635,10 +664,11 @@ function App() {
           }),
         );
       }
-      selectedPlan.endpoint_connectors.features.forEach((feature) => {
-        if (feature.geometry)
-          addLine(feature.geometry, routeMeta[selectedStrategy].color, 2);
-      });
+      if (selectedRouteVisible)
+        selectedPlan.endpoint_connectors.features.forEach((feature) => {
+          if (feature.geometry)
+            addLine(feature.geometry, routeMeta[selectedStrategy].color, 2);
+        });
     } catch {
       // Preserve the working scene if a future optional overlay is rejected.
     }
@@ -652,6 +682,8 @@ function App() {
     selectedCorridorKey,
     selectedStrategy,
     corridorGroups,
+    selectedRouteVisible,
+    visibleCorridorGroups,
   ]);
   useEffect(() => {
     const scene = googleMap.current;
@@ -791,7 +823,7 @@ function App() {
       "scenario-study-area-halo",
       "line",
       ["==", ["get", "layer"], "study_area"],
-      { "line-color": "#061015", "line-width": 7, "line-opacity": 0.78 },
+      { "line-color": "#061015", "line-width": 1, "line-opacity": 0.3 },
     );
     layer(
       "scenario-study-area-outline",
@@ -799,9 +831,9 @@ function App() {
       ["==", ["get", "layer"], "study_area"],
       {
         "line-color": "#25f4d0",
-        "line-width": 2.25,
-        "line-opacity": 0.94,
-        "line-dasharray": [2, 1.4],
+        "line-width": 0.55,
+        "line-opacity": 0.48,
+        "line-dasharray": [1.2, 2],
       },
     );
   }, [mapReady, scenario]);
@@ -974,7 +1006,7 @@ function App() {
     });
     const routes: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
-      features: corridorGroups.map((group) => ({
+      features: visibleCorridorGroups.map((group) => ({
         type: "Feature",
         properties: {
           corridor_key: group.key,
@@ -984,20 +1016,22 @@ function App() {
       })),
     };
     instance.addSource("gridpath-routes", { type: "geojson", data: routes });
-    instance.addSource("gridpath-route-corridor", {
-      type: "geojson",
-      data: asFeatures(selectedPlan.right_of_way),
-    });
-    instance.addSource("gridpath-route-connectors", {
-      type: "geojson",
-      data: selectedPlan.endpoint_connectors,
-    });
+    if (selectedRouteVisible) {
+      instance.addSource("gridpath-route-corridor", {
+        type: "geojson",
+        data: asFeatures(selectedPlan.right_of_way),
+      });
+      instance.addSource("gridpath-route-connectors", {
+        type: "geojson",
+        data: selectedPlan.endpoint_connectors,
+      });
+    }
     const selected = [
       "==",
       ["get", "corridor_key"],
       selectedCorridorKey,
     ] as unknown as maplibregl.ExpressionSpecification;
-    instance.addLayer({
+    if (selectedRouteVisible) instance.addLayer({
       id: "route-row-fill",
       type: "fill",
       source: "gridpath-route-corridor",
@@ -1006,7 +1040,7 @@ function App() {
         "fill-opacity": 0.16,
       },
     });
-    instance.addLayer({
+    if (selectedRouteVisible) instance.addLayer({
       id: "route-row-outline",
       type: "line",
       source: "gridpath-route-corridor",
@@ -1016,13 +1050,13 @@ function App() {
         "line-opacity": 0.82,
       },
     } as maplibregl.LineLayerSpecification);
-    instance.addLayer({
+    if (selectedRouteVisible) instance.addLayer({
       id: "route-connector-underlay",
       type: "line",
       source: "gridpath-route-connectors",
       paint: { "line-color": "#05090d", "line-width": 7, "line-opacity": 0.95 },
     } as maplibregl.LineLayerSpecification);
-    instance.addLayer({
+    if (selectedRouteVisible) instance.addLayer({
       id: "route-connectors",
       type: "line",
       source: "gridpath-route-connectors",
@@ -1039,7 +1073,7 @@ function App() {
       source: "gridpath-routes",
       paint: {
         "line-color": "#03080a",
-        "line-width": ["case", selected, 12, 7],
+        "line-width": ["case", selected, 14, 9],
         "line-opacity": ["case", selected, 0.98, 0.78],
       },
     } as maplibregl.LineLayerSpecification);
@@ -1049,8 +1083,8 @@ function App() {
       source: "gridpath-routes",
       paint: {
         "line-color": ["get", "color"],
-        "line-width": ["case", selected, 6, 3],
-        "line-opacity": ["case", selected, 1, 0.62],
+        "line-width": ["case", selected, 8, 4],
+        "line-opacity": ["case", selected, 1, 0.76],
       },
     } as maplibregl.LineLayerSpecification);
   }, [
@@ -1059,7 +1093,9 @@ function App() {
     mapReady,
     selectedCorridorKey,
     selectedPlan,
+    selectedRouteVisible,
     selectedStrategy,
+    visibleCorridorGroups,
   ]);
   useEffect(() => {
     const instance = map.current;
@@ -1176,20 +1212,96 @@ function App() {
       setPlanning(false);
     }
   };
+  const exportAssessment = () => {
+    if (!alternatives || !selectedPlan || !scenario) return;
+    const endpointFeature = (id: string, point: GeoPoint | undefined) =>
+      point
+        ? {
+            type: "Feature" as const,
+            properties: { feature_type: "selected_endpoint", endpoint_id: id },
+            geometry: point,
+          }
+        : null;
+    const routeFeatures = alternatives.alternatives.map((plan) => ({
+      type: "Feature" as const,
+      properties: {
+        feature_type: "route_centreline",
+        strategy: plan.strategy,
+        strategy_label: routeMeta[plan.strategy].label,
+        strategy_explanation: cardTradeoff(plan),
+        route_length_m: plan.route_length_m,
+        environmental_overlap_m2: plan.environmental_sensitivity_overlap_m2,
+        water_review_crossings: plan.water_crossings_requiring_specialist_review,
+        bridge_exposure_m: plan.road_bridge_segments_m,
+        tunnel_exposure_m: plan.road_tunnel_segments_m,
+        major_road_exposure_m: plan.major_road_exposure_m,
+        turns: plan.turn_count,
+        candidate_rank: plan.candidate_rank,
+      },
+      geometry: plan.centreline,
+    }));
+    const connectorFeatures = selectedPlan.endpoint_connectors.features.map(
+      (feature) => ({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          feature_type: "synthetic_endpoint_connector",
+          strategy: selectedPlan.strategy,
+        },
+      }),
+    );
+    const snappedFeatures = Object.entries(selectedPlan.snapped_road_points).map(
+      ([id, point]) => ({
+        type: "Feature" as const,
+        properties: { feature_type: "snapped_road_point", endpoint_id: id },
+        geometry: point,
+      }),
+    );
+    const featureCollection: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: [
+        ...Object.entries(selectedPlan.selected_endpoints)
+          .map(([id, point]) => endpointFeature(id, point))
+          .filter(Boolean),
+        ...routeFeatures,
+        {
+          type: "Feature",
+          properties: {
+            feature_type: "selected_right_of_way",
+            strategy: selectedPlan.strategy,
+          },
+          geometry: selectedPlan.right_of_way,
+        },
+        ...connectorFeatures,
+        ...snappedFeatures,
+      ],
+      properties: {
+        study_area_identifier: scenario.metadata.scenario_name,
+        source: scenario.metadata.source,
+        generation_timestamp: new Date().toISOString(),
+        planning_assumptions: {
+          building_clearance_m: clearance,
+          right_of_way_width_m: rightOfWayWidth,
+          endpoint_mode: selectedPlan.endpoint_mode,
+        },
+        disclaimer:
+          "Planning prototype only. This assessment is not a regulatory-compliance determination or construction-ready alignment.",
+      },
+    } as GeoJSON.FeatureCollection;
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(featureCollection, null, 2)], {
+        type: "application/geo+json",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "gridpath-corridor-assessment.geojson";
+    link.click();
+    URL.revokeObjectURL(url);
+    setExportMessage("Assessment exported as GeoJSON.");
+  };
   const toggleLayer = (name: string) =>
     setVisibleLayers((current) => ({ ...current, [name]: !current[name] }));
-  const overlapNote = (plan: PlanAlternative) =>
-    [
-      plan.strategy_note,
-      ...Object.entries(plan.pairwise_overlap).map(
-        ([strategy, value]) =>
-          `${routeMeta[strategy as Strategy]?.label ?? strategy}: ${value}% shared`,
-      ),
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  if (selectedPlan)
-    routeMeta[selectedPlan.strategy].note = selectedPlan.strategy_note;
   if (!scenario)
     return (
       <main className="app-shell">
@@ -1363,9 +1475,7 @@ function App() {
                 <>
                   <div className="comparison-heading">
                     <span>
-                      {strategiesConverged
-                        ? "Recommended corridor"
-                        : `${corridorGroups.length} UNIQUE CORRIDORS · 3 OBJECTIVES`}
+                      Three corridor objectives
                     </span>
                     <small>
                       {alternatives.candidate_count} deterministic candidates
@@ -1373,18 +1483,15 @@ function App() {
                     </small>
                   </div>
                   <div className="comparison-cards">
-                    {corridorGroups.map((group) => {
-                      const alternative = group.representative;
-                      const combinedLabel = group.alternatives
-                        .map((item) => routeMeta[item.strategy].label)
-                        .join(" + ");
+                    {alternatives.alternatives.map((alternative) => {
+                      const groupKey = corridorSignature(alternative);
                       return (
                       <button
-                        key={group.key}
+                        key={alternative.strategy}
                         type="button"
-                        className={`comparison-card ${selectedCorridorKey === group.key ? "selected" : ""}`}
+                        className={`comparison-card ${selectedStrategy === alternative.strategy ? "selected" : ""}`}
                         onClick={() => {
-                          setSelectedCorridorKey(group.key);
+                          setSelectedCorridorKey(groupKey);
                           setSelectedStrategy(alternative.strategy);
                         }}
                       >
@@ -1393,95 +1500,40 @@ function App() {
                             color: routeMeta[alternative.strategy].color,
                           }}
                         >
-                          {strategiesConverged
-                            ? "Recommended corridor"
-                            : combinedLabel}
+                          {routeMeta[alternative.strategy].label}
                         </strong>
                         <span>
-                          {alternative.route_length_m} m · rank{" "}
-                          {alternative.candidate_rank}
+                          {alternative.route_length_m} m · {alternative.strategy === "environmental"
+                            ? `${alternative.environmental_sensitivity_overlap_m2} m² overlap`
+                            : alternative.strategy === "constructability"
+                              ? `${alternative.turn_count} turns`
+                              : "minimum length"}
                         </span>
-                        <span>
-                          {alternative.environmental_sensitivity_overlap_m2} m²
-                          environmental overlap ·{" "}
-                          {alternative.water_crossings_requiring_specialist_review} mapped water crossings requiring review
-                        </span>
-                        <span>
-                          {alternative.turn_count} turns ·{" "}
-                          {alternative.road_bridge_segments_m} m tagged bridge exposure ·{" "}
-                          {alternative.road_tunnel_segments_m} m tagged tunnel exposure
-                        </span>
-                        <small>
-                          {strategiesConverged
-                            ? "All evaluated objectives agree on this corridor. Shortest · Lowest impact · Lowest complexity."
-                            : group.alternatives
-                                .map(
-                                  (item) =>
-                                    overlapNote(item) ||
-                                    routeMeta[item.strategy].note,
-                                )
-                                .join(" · ")}
-                        </small>
+                        <small>{cardTradeoff(alternative)}</small>
                       </button>
                       );
                     })}
                   </div>
                   {selectedPlan ? (
                     <div className="constraint-card result-card">
-                      <span>
-                        {strategiesConverged
-                          ? "Recommended corridor"
-                          : selectedCorridor?.alternatives
-                              .map((item) => routeMeta[item.strategy].label)
-                              .join(" + ")}{" "}
-                        — detailed metrics
-                      </span>
-                      <dl>
-                        <div>
-                          <dt>Route length</dt>
-                          <dd>{selectedPlan.route_length_m} m</dd>
-                        </div>
-                        <div>
-                          <dt>Building conflicts</dt>
-                          <dd>
-                            {selectedPlan.buildings_intersecting_right_of_way}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Environmental overlap</dt>
-                          <dd>
-                            {selectedPlan.environmental_sensitivity_overlap_m2}{" "}
-                            m²
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Mapped water crossings requiring review</dt>
-                          <dd>
-                            {selectedPlan.water_crossings_requiring_specialist_review}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Tagged road bridge exposure</dt>
-                          <dd>
-                            {selectedPlan.road_bridge_segments_m} m
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Tagged road tunnel exposure</dt>
-                          <dd>
-                            {selectedPlan.road_tunnel_segments_m} m
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Turns</dt>
-                          <dd>{selectedPlan.turn_count}</dd>
-                        </div>
-                      </dl>
-                      <p className="route-note">
-                        {routeMeta[selectedPlan.strategy].note}
-                      </p>
+                      <details>
+                        <summary>Technical details</summary>
+                        <dl>
+                          <div><dt>Water review crossings</dt><dd>{selectedPlan.water_crossings_requiring_specialist_review}</dd></div>
+                          <div><dt>Bridge exposure</dt><dd>{selectedPlan.road_bridge_segments_m} m</dd></div>
+                          <div><dt>Tunnel exposure</dt><dd>{selectedPlan.road_tunnel_segments_m} m</dd></div>
+                          <div><dt>Major-road exposure</dt><dd>{selectedPlan.major_road_exposure_m} m</dd></div>
+                          <div><dt>Candidate rank</dt><dd>{selectedPlan.candidate_rank}</dd></div>
+                          <div><dt>Shared-edge overlap</dt><dd>{Object.entries(selectedPlan.pairwise_overlap).map(([strategy, value]) => `${routeMeta[strategy as Strategy]?.label ?? strategy} ${value}%`).join(" · ") || "None"}</dd></div>
+                          <div><dt>Candidates screened</dt><dd>{alternatives.candidate_count}</dd></div>
+                        </dl>
+                      </details>
                     </div>
                   ) : null}
+                  <button type="button" className="export-assessment" onClick={exportAssessment}>
+                    Export assessment
+                  </button>
+                  {exportMessage ? <p className="export-message">{exportMessage}</p> : null}
                 </>
               ) : null}
               <p className="source-note">
@@ -1535,15 +1587,28 @@ function App() {
                 onClick={() => setCorridorDesignVisible((visible) => !visible)}
               >
                 {corridorDesignVisible
-                  ? "Hide corridor design"
-                  : "Show corridor design"}
+                  ? "Hide analysis"
+                  : "Show analysis"}
               </button>
-              <span><i className="route-shortest" /> Recommended corridor</span>
-              <span><i className="row" /> Right-of-way</span>
-              <span><i className="origin" /> Grid connection</span>
-              <span><i className="destination" /> Proposed development</span>
-              <span><i className="connector" /> Synthetic connectors</span>
-              <span><i className="constraints" /> Visible constraints</span>
+              {(Object.keys(routeMeta) as Strategy[]).map((strategy) => (
+                <button
+                  key={strategy}
+                  type="button"
+                  className={`legend-layer ${visibleStrategies[strategy] ? "active" : ""}`}
+                  aria-pressed={visibleStrategies[strategy]}
+                  onClick={() =>
+                    setVisibleStrategies((current) => ({
+                      ...current,
+                      [strategy]: !current[strategy],
+                    }))
+                  }
+                >
+                  <i className={`route-${strategy}`} /> {routeMeta[strategy].label}
+                </button>
+              ))}
+              <span><i className="row" /> Selected corridor</span>
+              <span><i className="origin" /> Grid point</span>
+              <span><i className="destination" /> Development point</span>
             </div>
           </div>
         </MapErrorBoundary>
