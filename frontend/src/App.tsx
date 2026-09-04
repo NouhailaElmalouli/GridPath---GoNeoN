@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { loadGoogleMaps3D } from "./google3d";
@@ -479,6 +479,35 @@ function App() {
     clearResults();
     setPlanError(null);
   };
+  const placeMapPoint = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest(".maplibregl-ctrl")) return;
+    const activePlacement =
+      placementMode ??
+      (!draftEndpoints.grid_connection
+        ? "grid_connection"
+        : !draftEndpoints.proposed_development
+          ? "proposed_development"
+          : null);
+    if (!activePlacement || !map.current || !mapContainer.current) return;
+    const bounds = mapContainer.current.getBoundingClientRect();
+    const lngLat = map.current.unproject([
+      event.clientX - bounds.left,
+      event.clientY - bounds.top,
+    ]);
+    const point: GeoPoint = {
+      type: "Point",
+      coordinates: [lngLat.lng, lngLat.lat],
+    };
+    clearResults();
+    setPlanError(null);
+    if (activePlacement === "grid_connection") {
+      setDraftEndpoints({ grid_connection: point });
+      setPlacementMode("proposed_development");
+    } else {
+      setDraftEndpoints((current) => ({ ...current, proposed_development: point }));
+      setPlacementMode(null);
+    }
+  }, [clearResults, draftEndpoints, placementMode]);
 
   useEffect(() => {
     if (!scenario || !mapContainer.current || map.current) return;
@@ -1092,33 +1121,6 @@ function App() {
     };
   }, [mapReady, officialContext, officialContextVisible, selectedOfficialAsset]);
   useEffect(() => {
-    if (!mapReady || !map.current) return;
-    const instance = map.current;
-    const handler = (event: maplibregl.MapMouseEvent) => {
-      if (!placementMode || event.originalEvent.defaultPrevented) return;
-      const point: GeoPoint = {
-        type: "Point",
-        coordinates: [event.lngLat.lng, event.lngLat.lat],
-      };
-      clearResults();
-      setPlanError(null);
-      if (placementMode === "grid_connection") {
-        setDraftEndpoints({ grid_connection: point });
-        setPlacementMode("proposed_development");
-      } else {
-        setDraftEndpoints((current) => ({
-          ...current,
-          proposed_development: point,
-        }));
-        setPlacementMode(null);
-      }
-    };
-    instance.on("click", handler);
-    return () => {
-      instance.off("click", handler);
-    };
-  }, [clearResults, mapReady, placementMode]);
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setPlacementMode(null);
     };
@@ -1127,53 +1129,40 @@ function App() {
   }, []);
   useEffect(() => {
     if (map.current)
-      map.current.getCanvas().style.cursor = placementMode ? "crosshair" : "";
-  }, [placementMode]);
+      map.current.getCanvas().style.cursor =
+        placementMode || !draftEndpoints.grid_connection || !draftEndpoints.proposed_development
+          ? "crosshair"
+          : "";
+  }, [draftEndpoints, placementMode]);
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
-    ["selection-labels", "selection-points", "selection-radius"].forEach(
-      (id) => {
-        if (instance.getLayer(id)) instance.removeLayer(id);
-      },
-    );
-    ["gridpath-selection", "gridpath-radius"].forEach((id) => {
-      if (instance.getSource(id)) instance.removeSource(id);
-    });
     const endpoints = Object.entries(displayedEndpoints).filter(
       (entry): entry is [string, GeoPoint] => Boolean(entry[1]),
     );
-    instance.addSource("gridpath-selection", {
-      type: "geojson",
-      data: {
-        type: "FeatureCollection",
-        features: endpoints.map(([id, point]) => ({
-          type: "Feature",
-          properties: {
-            endpoint_id: id,
-          },
-          geometry: point,
-        })),
-      },
-    });
-    instance.addLayer({
-      id: "selection-points",
-      type: "circle",
-      source: "gridpath-selection",
-      paint: {
-        "circle-radius": 6,
-        "circle-color": [
-          "match",
-          ["get", "endpoint_id"],
-          "grid_connection",
-          "#25f4d0",
-          "#f044b7",
-        ],
-        "circle-stroke-color": "#071014",
-        "circle-stroke-width": 2.2,
-      },
-    });
-    if (endpoints.length === 2)
+    const selection: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: endpoints.map(([id, point]) => ({
+        type: "Feature",
+        properties: { endpoint_id: id },
+        geometry: point,
+      })),
+    };
+    const selectionSource = instance.getSource("gridpath-selection") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (selectionSource) selectionSource.setData(selection);
+    else instance.addSource("gridpath-selection", { type: "geojson", data: selection });
+    if (!instance.getLayer("selection-points"))
+      instance.addLayer({
+        id: "selection-points", type: "circle", source: "gridpath-selection",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": ["match", ["get", "endpoint_id"], "grid_connection", "#25f4d0", "#f044b7"],
+          "circle-stroke-color": "#071014", "circle-stroke-width": 2.4,
+        },
+      });
+    if (!instance.getLayer("selection-labels"))
       instance.addLayer({
         id: "selection-labels",
         type: "symbol",
@@ -1190,14 +1179,23 @@ function App() {
           "text-halo-width": 1.25,
         },
       } as maplibregl.SymbolLayerSpecification);
-    if (
-      placementMode === "proposed_development" &&
-      draftEndpoints.grid_connection
-    ) {
-      instance.addSource("gridpath-radius", {
-        type: "geojson",
-        data: circleFeature(draftEndpoints.grid_connection),
-      });
+    instance.setLayoutProperty(
+      "selection-labels",
+      "visibility",
+      endpoints.length === 2 ? "visible" : "none",
+    );
+    const radius: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: placementMode === "proposed_development" && draftEndpoints.grid_connection
+        ? [circleFeature(draftEndpoints.grid_connection)]
+        : [],
+    };
+    const radiusSource = instance.getSource("gridpath-radius") as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (radiusSource) radiusSource.setData(radius);
+    else instance.addSource("gridpath-radius", { type: "geojson", data: radius });
+    if (!instance.getLayer("selection-radius"))
       instance.addLayer({
         id: "selection-radius",
         type: "line",
@@ -1209,7 +1207,9 @@ function App() {
           "line-dasharray": [2, 2],
         },
       } as maplibregl.LineLayerSpecification);
-    }
+    ["selection-radius", "selection-points", "selection-labels"].forEach((id) =>
+      instance.moveLayer(id),
+    );
   }, [
     displayedEndpoints,
     draftEndpoints.grid_connection,
@@ -1217,20 +1217,9 @@ function App() {
     placementMode,
   ]);
   useEffect(() => {
-    if (!mapReady || !map.current || !alternatives || !selectedPlan) return;
+    if (!mapReady || !map.current) return;
     const instance = map.current;
-    const remove = (layers: string[], source: string) => {
-      layers.forEach((id) => {
-        if (instance.getLayer(id)) instance.removeLayer(id);
-      });
-      if (instance.getSource(source)) instance.removeSource(source);
-    };
-    remove(["route-row-fill", "route-row-outline"], "gridpath-route-corridor");
-    remove(
-      ["route-connector-underlay", "route-connectors"],
-      "gridpath-route-connectors",
-    );
-    remove(["routes-underlay", "routes-centreline"], "gridpath-routes");
+    const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
     const asFeatures = (
       geometry: GeoJSON.Geometry,
     ): GeoJSON.FeatureCollection => ({
@@ -1239,7 +1228,7 @@ function App() {
     });
     const routes: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
-      features: visibleCorridorGroups.map((group) => ({
+      features: (alternatives ? visibleCorridorGroups : []).map((group) => ({
         type: "Feature",
         properties: {
           corridor_key: group.key,
@@ -1248,23 +1237,26 @@ function App() {
         geometry: group.representative.centreline,
       })),
     };
-    instance.addSource("gridpath-routes", { type: "geojson", data: routes });
-    if (selectedRouteVisible) {
-      instance.addSource("gridpath-route-corridor", {
-        type: "geojson",
-        data: asFeatures(selectedPlan.right_of_way),
-      });
-      instance.addSource("gridpath-route-connectors", {
-        type: "geojson",
-        data: selectedPlan.endpoint_connectors,
-      });
-    }
+    const updateSource = (id: string, data: GeoJSON.FeatureCollection) => {
+      const source = instance.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (source) source.setData(data);
+      else instance.addSource(id, { type: "geojson", data });
+    };
+    updateSource("gridpath-routes", routes);
+    updateSource(
+      "gridpath-route-corridor",
+      selectedPlan && selectedRouteVisible ? asFeatures(selectedPlan.right_of_way) : empty,
+    );
+    updateSource(
+      "gridpath-route-connectors",
+      selectedPlan && selectedRouteVisible ? selectedPlan.endpoint_connectors : empty,
+    );
     const selected = [
       "==",
       ["get", "corridor_key"],
       selectedCorridorKey,
     ] as unknown as maplibregl.ExpressionSpecification;
-    if (selectedRouteVisible) instance.addLayer({
+    if (!instance.getLayer("route-row-fill")) instance.addLayer({
       id: "route-row-fill",
       type: "fill",
       source: "gridpath-route-corridor",
@@ -1273,7 +1265,7 @@ function App() {
         "fill-opacity": 0.16,
       },
     });
-    if (selectedRouteVisible) instance.addLayer({
+    if (!instance.getLayer("route-row-outline")) instance.addLayer({
       id: "route-row-outline",
       type: "line",
       source: "gridpath-route-corridor",
@@ -1283,13 +1275,13 @@ function App() {
         "line-opacity": 0.82,
       },
     } as maplibregl.LineLayerSpecification);
-    if (selectedRouteVisible) instance.addLayer({
+    if (!instance.getLayer("route-connector-underlay")) instance.addLayer({
       id: "route-connector-underlay",
       type: "line",
       source: "gridpath-route-connectors",
       paint: { "line-color": "#05090d", "line-width": 7, "line-opacity": 0.95 },
     } as maplibregl.LineLayerSpecification);
-    if (selectedRouteVisible) instance.addLayer({
+    if (!instance.getLayer("route-connectors")) instance.addLayer({
       id: "route-connectors",
       type: "line",
       source: "gridpath-route-connectors",
@@ -1300,7 +1292,7 @@ function App() {
         "line-dasharray": [2, 1.5],
       },
     } as maplibregl.LineLayerSpecification);
-    instance.addLayer({
+    if (!instance.getLayer("routes-underlay")) instance.addLayer({
       id: "routes-underlay",
       type: "line",
       source: "gridpath-routes",
@@ -1310,7 +1302,7 @@ function App() {
         "line-opacity": ["case", selected, 0.98, 0.78],
       },
     } as maplibregl.LineLayerSpecification);
-    instance.addLayer({
+    if (!instance.getLayer("routes-centreline")) instance.addLayer({
       id: "routes-centreline",
       type: "line",
       source: "gridpath-routes",
@@ -1320,6 +1312,12 @@ function App() {
         "line-opacity": ["case", selected, 1, 0.76],
       },
     } as maplibregl.LineLayerSpecification);
+    ["route-row-fill", "route-row-outline", "route-connector-underlay", "route-connectors", "routes-underlay", "routes-centreline"].forEach((id) =>
+      instance.moveLayer(id),
+    );
+    instance.setPaintProperty("route-row-fill", "fill-color", routeMeta[selectedStrategy].color);
+    instance.setPaintProperty("route-row-outline", "line-color", routeMeta[selectedStrategy].color);
+    instance.setPaintProperty("route-connectors", "line-color", routeMeta[selectedStrategy].color);
   }, [
     alternatives,
     corridorGroups,
@@ -1359,22 +1357,6 @@ function App() {
     });
   }, [corridorDesignVisible, mapReady, alternatives, selectedStrategy]);
   useEffect(() => {
-    const instance = map.current;
-    if (!instance || alternatives) return;
-    const remove = (layers: string[], source: string) => {
-      layers.forEach((id) => {
-        if (instance.getLayer(id)) instance.removeLayer(id);
-      });
-      if (instance.getSource(source)) instance.removeSource(source);
-    };
-    remove(["route-row-fill", "route-row-outline"], "gridpath-route-corridor");
-    remove(
-      ["route-connector-underlay", "route-connectors"],
-      "gridpath-route-connectors",
-    );
-    remove(["routes-underlay", "routes-centreline"], "gridpath-routes");
-  }, [alternatives, mapReady]);
-  useEffect(() => {
     if (alternatives && mapReady) focusAlternatives();
   }, [alternatives, focusAlternatives, mapReady]);
   const generateAlternatives = async () => {
@@ -1390,14 +1372,10 @@ function App() {
         right_of_way_width_m: rightOfWayWidth,
         strategy: "balanced",
       };
-      if (
-        userSelected &&
-        draftEndpoints.grid_connection &&
-        draftEndpoints.proposed_development
-      ) {
-        body.grid_connection = draftEndpoints.grid_connection;
-        body.proposed_development = draftEndpoints.proposed_development;
-      }
+      // Generation is disabled until both points exist, so frontend planning
+      // always sends the explicit user-selected WGS84 points.
+      body.grid_connection = draftEndpoints.grid_connection;
+      body.proposed_development = draftEndpoints.proposed_development;
       const response = await fetch(`${apiBaseUrl}/api/plan/alternatives`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1833,7 +1811,7 @@ function App() {
         </aside>
         <MapErrorBoundary>
           <div className="map-stage">
-            <div ref={mapContainer} className="map" />
+            <div ref={mapContainer} className="map" onClick={placeMapPoint} />
             {selectedOfficialAsset ? (
               <aside className="official-asset-popover" aria-label="Official asset details">
                 <button type="button" onClick={() => setSelectedOfficialAsset(null)} aria-label="Close official asset details">×</button>
