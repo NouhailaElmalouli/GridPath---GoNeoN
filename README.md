@@ -1,96 +1,52 @@
 # GridPath
 
-**Agentic power-line alignment and right-of-way screening**
+GridPath is an end-to-end infrastructure corridor screening MVP built for the goNEON Platform & Ecosystem Owner exercise.
 
-GridPath is an early-stage feasibility planning prototype for overhead power-transmission alignments in one prepared peri-urban Zurich-region study area. It compares candidate alignments between a representative grid connection point and an explicitly synthetic proposed development.
+It demonstrates how a user can select two planning locations and rapidly screen underground corridor alternatives against engineering and environmental constraints.
 
-AI interprets the planner's intent and orchestrates the workflow; deterministic spatial functions generate, measure, validate, and score every result.
+## Live MVP
 
-GridPath is an adjacent platform-extension concept created for this exercise, not an official goNEON product. It differs from goNEON Corridor Studies, which uses existing street networks to evaluate cycling-route variants and road-design consequences. GridPath instead evaluates free-space territorial alignment and right-of-way, environmental, and settlement constraints for power transmission.
+[Hosted GridPath application]
 
-## Repository structure
+For usage instructions, see [INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
-```text
-backend/             FastAPI API and deterministic spatial services
-frontend/            React, TypeScript, Vite, and MapLibre interface
-data/raw/            Download cache (not committed)
-data/processed/      Committed canonical prepared demo scenario
-docs/                Product scope and architecture decisions
-scripts/             Data preparation and local development helpers
-```
+## What it demonstrates
 
-## Prerequisites
+- User-defined Point A and Point B
+- Maximum 1 km screening distance
+- Building-clearance and corridor-width assumptions
+- Deterministic candidate corridor generation
+- Comparison of route objectives including shortest, environmental impact and constructability
+- Prepared geospatial context for the Dietikon–Urdorf area
+- 2D analytical view and 3D contextual visualization
+- Technical route metrics and assessment export
 
-- Python 3.12
-- Node.js 20+
-- Git
+## Architecture
 
-## Windows setup
+Frontend:
+- React
+- TypeScript
+- Vite
+- MapLibre
+- Google Maps 3D visualization
 
-```powershell
-python -m venv .venv
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-cd backend
-python -m pip install -e ".[dev]"
-cd ..\frontend
-npm install
-cd ..
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-```
+Backend:
+- FastAPI
+- Python
+- GeoPandas / Shapely
+- NetworkX
+- OSMnx
 
-## Run locally
+Deployment:
+- Frontend: Vercel
+- API: Railway
 
-```powershell
-# Backend
-.\.venv\Scripts\Activate.ps1
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
+## Scope
 
-In a second PowerShell window:
+This is intentionally a narrow overnight MVP.
 
-```powershell
-cd frontend
-npm run dev
-```
+It is not intended to produce a regulatory-approved or construction-ready alignment. Its purpose is to demonstrate an extensible planning workflow that could sit on top of a broader infrastructure-planning platform.
 
-Open <http://localhost:5173>. The API health endpoint is <http://localhost:8000/api/health>.
+## Running locally
 
-## Balanced alignment calculation
-
-`POST /api/plan` uses the committed scenario only. It runs deterministic A* on a
-5 m EPSG:2056 grid with eight-direction movement and Euclidean heuristic. The
-building hard-exclusion distance is `building_clearance_m + right_of_way_width_m / 2`;
-clearance is measured from the outer right-of-way edge. Statutory protected
-areas are hard exclusions; environmental and water layers are soft penalties.
-
-```json
-{"scenario_id":"zurich-dietikon-urdorf-v1","building_clearance_m":25,"right_of_way_width_m":40,"strategy":"balanced"}
-```
-
-The response contains EPSG:4326 centreline, right-of-way, exclusion-envelope,
-metrics, vector-validation checks, and a deterministic calculation trace.
-The 5 m grid is appropriate for early screening only; it is not transmission
-engineering, a land-rights assessment, or regulatory approval.
-
-## Checks
-
-```powershell
-cd backend
-pytest
-ruff check .
-
-cd ..\frontend
-npm run lint
-npm run build
-```
-
-## Data policy
-
-The demo uses a small committed OpenStreetMap-derived Zurich-region dataset
-prepared during development. Runtime requests never depend on Overpass or
-municipal WFS availability. See `docs/aoi-selection.md` for source limitations.
-
-Planning prototype only. Results are not regulatory-compliance determinations, construction-ready alignments, or a substitute for statutory, environmental, land-rights, or engineering review.
+See the existing development setup below.
