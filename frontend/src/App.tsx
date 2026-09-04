@@ -231,7 +231,7 @@ function App() {
     string,
     new (options: Record<string, unknown>) => HTMLElement
   > | null>(null);
-  const presentationMode = useRef<ViewMode>("2d");
+  const presentationMode = useRef<ViewMode>("3d");
   const [mapReady, setMapReady] = useState(false);
   const [styleRevision, setStyleRevision] = useState(0);
   const [scenario, setScenario] = useState<Scenario | null>(null);
@@ -244,7 +244,7 @@ function App() {
   const [selectedCorridorKey, setSelectedCorridorKey] = useState<string | null>(
     null,
   );
-  const [viewMode, setViewMode] = useState<ViewMode>("2d");
+  const [viewMode, setViewMode] = useState<ViewMode>("3d");
   const [placementMode, setPlacementMode] = useState<PlacementMode>(null);
   const [draftEndpoints, setDraftEndpoints] = useState<Endpoints>({});
   const [validatedEndpoints, setValidatedEndpoints] = useState<Endpoints>({});
