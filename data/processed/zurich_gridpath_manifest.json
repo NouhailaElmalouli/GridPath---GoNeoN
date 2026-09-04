@@ -36,8 +36,8 @@
       "id": "grid_connection",
       "label": "Representative grid connection",
       "coordinates": [
-        8.4086,
-        47.3948
+        8.4070784,
+        47.4018896
       ],
       "provenance": "synthetic"
     },
@@ -45,8 +45,8 @@
       "id": "proposed_development",
       "label": "Proposed development",
       "coordinates": [
-        8.415859,
-        47.391835
+        8.4131821,
+        47.3994098
       ],
       "provenance": "synthetic"
     }

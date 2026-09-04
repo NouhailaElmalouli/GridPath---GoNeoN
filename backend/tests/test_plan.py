@@ -223,15 +223,66 @@ def test_strategy_winners_match_measured_objectives_for_demo_and_custom_pairs() 
         assert shortest["route_length_m"] == min(
             item["route_length_m"] for item in alternatives.values()
         )
-        assert (environment["environmental_sensitivity_overlap_m2"], environment["water_crossing_count"]) <= (
-            shortest["environmental_sensitivity_overlap_m2"], shortest["water_crossing_count"]
+        assert (
+            environment["environmental_sensitivity_overlap_m2"],
+            environment["water_crossing_count"],
+            environment["major_road_exposure_m"],
+            environment["route_length_m"],
+        ) == min(
+            (
+                item["environmental_sensitivity_overlap_m2"],
+                item["water_crossing_count"],
+                item["major_road_exposure_m"],
+                item["route_length_m"],
+            )
+            for item in alternatives.values()
         )
-        assert constructability["route_length_m"] <= shortest["route_length_m"] * 1.25 + 0.1
-        assert constructability["tunnel_count"] <= shortest["tunnel_count"]
-        assert constructability["bridge_count"] <= shortest["bridge_count"]
-        assert constructability["turn_count"] <= shortest["turn_count"]
-        assert constructability["environmental_sensitivity_overlap_m2"] <= shortest["environmental_sensitivity_overlap_m2"]
+        assert constructability["route_length_m"] <= shortest["route_length_m"] * 1.35 + 0.1
+        assert (
+            constructability["road_tunnel_segments_m"],
+            constructability["road_bridge_segments_m"],
+            constructability["water_crossing_count"],
+            constructability["major_road_exposure_m"],
+            constructability["turn_count"],
+            sum(constructability["connector_lengths_m"].values()),
+            constructability["route_length_m"],
+        ) == min(
+            (
+                item["road_tunnel_segments_m"],
+                item["road_bridge_segments_m"],
+                item["water_crossing_count"],
+                item["major_road_exposure_m"],
+                item["turn_count"],
+                sum(item["connector_lengths_m"].values()),
+                item["route_length_m"],
+            )
+            for item in alternatives.values()
+            if item["route_length_m"] <= shortest["route_length_m"] * 1.35 + 0.1
+        )
         assert constructability["strategy_note"]
+
+
+def test_proven_default_pair_returns_three_unique_objective_winners() -> None:
+    body = TestClient(app).post(
+        "/api/plan/alternatives", json={"scenario_id": SCENARIO_ID}
+    ).json()
+    alternatives = {item["strategy"]: item for item in body["alternatives"]}
+    assert len({tuple(item["edge_ids"]) for item in alternatives.values()}) == 3
+    assert [
+        alternatives[strategy]["route_length_m"]
+        for strategy in ("shortest", "environmental", "constructability")
+    ] == [556.5, 687.9, 582.6]
+    assert [
+        alternatives[strategy]["environmental_sensitivity_overlap_m2"]
+        for strategy in ("shortest", "environmental", "constructability")
+    ] == [2.7, 1.1, 11.0]
+    assert [
+        alternatives[strategy]["turn_count"]
+        for strategy in ("shortest", "environmental", "constructability")
+    ] == [6, 9, 3]
+    assert body["distinctness"]["shortest:environmental"]["shared_length_percentage"] == 70.6
+    assert body["distinctness"]["shortest:constructability"]["shared_length_percentage"] == 47.1
+    assert body["distinctness"]["environmental:constructability"]["shared_length_percentage"] == 27.8
 
 
 def test_area_screen_is_deduplicated_deterministic_and_scored() -> None:

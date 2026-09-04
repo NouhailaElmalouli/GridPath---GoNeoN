@@ -34,8 +34,11 @@ type PlanAlternative = {
   buildings_intersecting_right_of_way: number;
   environmental_sensitivity_overlap_m2: number;
   water_crossing_count: number;
+  water_crossings_requiring_specialist_review: number;
   bridge_count: number;
   tunnel_count: number;
+  road_bridge_segments_m: number;
+  road_tunnel_segments_m: number;
   turn_count: number;
   candidate_rank: number;
   pairwise_overlap: Record<string, number>;
@@ -75,7 +78,7 @@ const routeMeta: Record<
     note: "Measured minimum-length candidate.",
   },
   environmental: {
-    label: "Environment",
+    label: "Low impact",
     color: "#49e36e",
     note: "Measured environmental and water-impact comparison.",
   },
@@ -456,9 +459,8 @@ function App() {
           range: 1900,
           tilt: 65,
           heading: -28,
-          // Satellite mode keeps the photorealistic context while removing the
-          // provider's POI and minor-road label layer from the 3D comparison.
-          mode: "SATELLITE",
+          // HYBRID is the supported photorealistic mode for the route overlays.
+          mode: "HYBRID",
           defaultUIHidden: true,
         });
         googleMap.current = scene;
@@ -1402,12 +1404,12 @@ function App() {
                         <span>
                           {alternative.environmental_sensitivity_overlap_m2} m²
                           environmental overlap ·{" "}
-                          {alternative.water_crossing_count} water crossings
+                          {alternative.water_crossings_requiring_specialist_review} mapped water crossings requiring review
                         </span>
                         <span>
                           {alternative.turn_count} turns ·{" "}
-                          {alternative.bridge_count} bridges ·{" "}
-                          {alternative.tunnel_count} tunnels
+                          {alternative.road_bridge_segments_m} m tagged bridge exposure ·{" "}
+                          {alternative.road_tunnel_segments_m} m tagged tunnel exposure
                         </span>
                         <small>
                           {strategiesConverged
@@ -1453,14 +1455,21 @@ function App() {
                           </dd>
                         </div>
                         <div>
-                          <dt>Water crossings</dt>
-                          <dd>{selectedPlan.water_crossing_count}</dd>
+                          <dt>Mapped water crossings requiring review</dt>
+                          <dd>
+                            {selectedPlan.water_crossings_requiring_specialist_review}
+                          </dd>
                         </div>
                         <div>
-                          <dt>Bridge / tunnel</dt>
+                          <dt>Tagged road bridge exposure</dt>
                           <dd>
-                            {selectedPlan.bridge_count} /{" "}
-                            {selectedPlan.tunnel_count}
+                            {selectedPlan.road_bridge_segments_m} m
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Tagged road tunnel exposure</dt>
+                          <dd>
+                            {selectedPlan.road_tunnel_segments_m} m
                           </dd>
                         </div>
                         <div>

@@ -418,8 +418,8 @@ def alternatives(
         key=lambda item: (
             item["values"]["road_tunnel_exposure_m"],
             item["values"]["road_bridge_exposure_m"],
-            item["values"]["major_road_exposure_m"],
             item["values"]["water_crossings"],
+            item["values"]["major_road_exposure_m"],
             item["values"]["turn_count"],
             start_distance + end_distance,
             item["values"]["length_m"], item["candidate"].rank,
@@ -428,7 +428,7 @@ def alternatives(
     selected = [("shortest", shortest["candidate"]), ("environmental", environment["candidate"]), ("constructability", constructability["candidate"])]
     evaluation_by_rank = {item["candidate"].rank: item for item in evaluated}
     environment_note = (
-        "Lowest-impact distinct mapped-corridor alternative: "
+        "Lowest measured environmental and water-impact corridor: "
         f"{environment['values']['environmental_overlap_m2']} m² overlap and "
         f"{environment['values']['water_crossings']} water crossings."
         if environment is not shortest
@@ -437,14 +437,16 @@ def alternatives(
         f"{shortest['values']['water_crossings']} water crossings); shortest route also wins this criterion."
     )
     constructability_note = (
-        "Lowest construction-complexity profile within the 25% detour ceiling: "
-        f"{constructability['tunnels']} tunnels, {constructability['bridges']} bridges, "
-        f"{constructability['values']['water_crossings']} water crossings, and "
+        "Lowest construction-complexity profile within the 35% detour ceiling: "
+        f"{constructability['values']['road_tunnel_exposure_m']} m tagged tunnel exposure, "
+        f"{constructability['values']['road_bridge_exposure_m']} m tagged bridge exposure, "
+        f"{constructability['values']['water_crossings']} mapped water crossings requiring review, and "
         f"{constructability['values']['turn_count']} turns."
         if constructability is not shortest
-        else "No route within the 25% detour ceiling improves the construction-complexity profile "
-        f"({shortest['tunnels']} tunnels, {shortest['bridges']} bridges, "
-        f"{shortest['values']['water_crossings']} water crossings, and "
+        else "No route within the 35% detour ceiling improves the construction-complexity profile "
+        f"({shortest['values']['road_tunnel_exposure_m']} m tagged tunnel exposure, "
+        f"{shortest['values']['road_bridge_exposure_m']} m tagged bridge exposure, "
+        f"{shortest['values']['water_crossings']} mapped water crossings requiring review, and "
         f"{shortest['values']['turn_count']} turns); shortest route also wins this criterion."
     )
     strategy_notes = {
@@ -479,7 +481,7 @@ def alternatives(
         plans.append(PlanResponse(
             plan_id=sha256(f"{scenario_id}|{strategy}|{'|'.join(edge.edge_id for edge in candidate.edges)}".encode()).hexdigest()[:16], strategy=strategy, display_name=labels[strategy], grid_resolution_m=0, computation_duration_ms=0, feasible=True,
             centreline=_export(line), corridor=_export(corridor), right_of_way=_export(corridor), hard_exclusion_envelope={"type": "GeometryCollection", "geometries": []}, endpoint_connectors=connectors, endpoint_markers={"type": "FeatureCollection", "features": []},
-            raw_vertex_count=len(line.coords), simplified_vertex_count=len(line.coords), route_length_m=values["length_m"], direct_distance_m=round(endpoint_selection.direct_distance_m, 1), detour_ratio=round(line.length / max(endpoint_selection.direct_distance_m, 1), 3), buildings_intersecting_right_of_way=0, minimum_building_clearance_m=round(corridor.distance(buildings), 1), environmental_sensitivity_overlap_m2=values["environmental_overlap_m2"], water_crossing_count=values["water_crossings"], bridge_tunnel_exposure_m=values["bridge_tunnel_exposure_m"], major_road_exposure_m=values["major_road_exposure_m"], turn_count=values["turn_count"], street_network_percentage=100, edge_ids=[edge.original_edge_id or edge.edge_id for edge in candidate.edges], validation_checks=checks, warnings=["Synthetic endpoint connectors are not mapped roads."], calculation_trace=["Build undirected physical street topology", "Generate deterministic k-shortest candidates", "Select metric-first strategy winners", "Validate corridor in EPSG:2056"], strategy_cost=round(sum(edge_cost(edge, strategy, environmental, water) for edge in candidate.edges), 1), road_class_breakdown=road_classes, bridge_count=sum(edge.bridge for edge in candidate.edges), tunnel_count=sum(edge.tunnel for edge in candidate.edges), constructability_score=constructability_score, candidate_rank=candidate.rank, strategy_note=strategy_notes[strategy], **response_endpoint_fields(endpoint_selection),
+            raw_vertex_count=len(line.coords), simplified_vertex_count=len(line.coords), route_length_m=values["length_m"], direct_distance_m=round(endpoint_selection.direct_distance_m, 1), detour_ratio=round(line.length / max(endpoint_selection.direct_distance_m, 1), 3), buildings_intersecting_right_of_way=0, minimum_building_clearance_m=round(corridor.distance(buildings), 1), environmental_sensitivity_overlap_m2=values["environmental_overlap_m2"], water_crossing_count=values["water_crossings"], water_crossings_requiring_specialist_review=values["water_crossings"], bridge_tunnel_exposure_m=values["bridge_tunnel_exposure_m"], road_bridge_segments_m=values["road_bridge_exposure_m"], road_tunnel_segments_m=values["road_tunnel_exposure_m"], major_road_exposure_m=values["major_road_exposure_m"], turn_count=values["turn_count"], street_network_percentage=100, edge_ids=[edge.original_edge_id or edge.edge_id for edge in candidate.edges], validation_checks=checks, warnings=["Synthetic endpoint connectors are not mapped roads."], calculation_trace=["Build undirected physical street topology", "Generate deterministic k-shortest candidates", "Select metric-first strategy winners", "Validate corridor in EPSG:2056"], strategy_cost=round(sum(edge_cost(edge, strategy, environmental, water) for edge in candidate.edges), 1), road_class_breakdown=road_classes, bridge_count=sum(edge.bridge for edge in candidate.edges), tunnel_count=sum(edge.tunnel for edge in candidate.edges), constructability_score=constructability_score, candidate_rank=candidate.rank, strategy_note=strategy_notes[strategy], **response_endpoint_fields(endpoint_selection),
         ))
     distinctness: dict[str, dict[str, float]] = {}
     for index, left in enumerate(plans):
