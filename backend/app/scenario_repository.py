@@ -17,7 +17,7 @@ LAYER_NAMES = {
     "road_network",
     "endpoints",
 }
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ScenarioRepositoryError(Exception):
