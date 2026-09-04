@@ -943,6 +943,52 @@ textarea {
   box-shadow: 0 8px 25px rgba(0,0,0,.3);
 }
 .map-view-controls + .focus-route { top: 100px; }
+.map-utility-zoom,
+.map-utility-actions {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+}
+.map-utility-zoom {
+  left: 18px;
+  bottom: 104px;
+}
+.map-utility-actions {
+  right: 18px;
+  bottom: 22px;
+}
+.map-utility-zoom button,
+.map-utility-actions button {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(122, 145, 174, 0.48);
+  border-radius: 50%;
+  color: #aab9d0;
+  background: rgba(0, 0, 0, 0.94);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.36);
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+}
+.map-utility-actions button {
+  width: 43px;
+  height: 43px;
+}
+.map-utility-zoom button:hover,
+.map-utility-actions button:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+}
+.map-utility-actions svg {
+  width: 23px;
+  height: 23px;
+  fill: currentColor;
+}
 .corridor-pills { top: 20px; right: 18px; gap: 7px; }
 .corridor-pills > * {
   min-height: 29px;
@@ -955,6 +1001,8 @@ textarea {
 .corridor-pills .corridor-toggle {
   min-height: 54px;
   padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 999px;
   color: #fff;
   background: #060607;
   font-size: 14px;

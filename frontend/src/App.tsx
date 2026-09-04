@@ -227,6 +227,9 @@ function App() {
   const map = useRef<MapLibreMap | null>(null);
   const googleMap = useRef<HTMLElement | null>(null);
   const googleEndpointMarkers = useRef<HTMLElement[]>([]);
+  // Keep direct references: Maps may adopt 3D elements internally, making a
+  // later scene query insufficient for hiding the planning analysis.
+  const googleAnalysisOverlays = useRef<HTMLElement[]>([]);
   const googleLibrary = useRef<Record<
     string,
     new (options: Record<string, unknown>) => HTMLElement
@@ -461,6 +464,40 @@ function App() {
       16.1,
     );
   }, [alternatives, displayedEndpoints, fitMap, scenario, officialContextVisible, nearestOfficialPointAsset]);
+  const adjustMapZoom = useCallback(
+    (direction: 1 | -1) => {
+      if (viewMode === "2d") {
+        const instance = map.current;
+        if (!instance) return;
+        instance.zoomTo(instance.getZoom() + direction, { duration: 260 });
+        return;
+      }
+      const scene = googleMap.current;
+      if (!scene) return;
+      const range = Number(scene.getAttribute("range") ?? "1900");
+      const nextRange = direction > 0 ? range * 0.72 : range * 1.38;
+      scene.setAttribute("range", `${Math.max(260, Math.min(11000, nextRange))}`);
+    },
+    [viewMode],
+  );
+  const resetMapOrientation = useCallback(() => {
+    if (viewMode === "2d") {
+      map.current?.easeTo({ bearing: 0, pitch: 0, duration: 360 });
+      return;
+    }
+    const scene = googleMap.current;
+    if (!scene) return;
+    scene.setAttribute("heading", "0");
+    scene.setAttribute("tilt", "55");
+  }, [viewMode]);
+  const toggleMapFullscreen = useCallback(() => {
+    const stage = mapContainer.current?.parentElement;
+    if (!stage) return;
+    const action = document.fullscreenElement
+      ? document.exitFullscreen()
+      : stage.requestFullscreen?.();
+    void action?.catch(() => undefined);
+  }, []);
   const clearResults = useCallback(() => {
     setAlternatives(null);
     setValidatedEndpoints({});
@@ -561,7 +598,6 @@ function App() {
       },
     });
     map.current = instance;
-    instance.addControl(new maplibregl.NavigationControl(), "bottom-right");
     const onLoad = () => setMapReady(true);
     const onStyleLoad = () => setStyleRevision((revision) => revision + 1);
     instance.on("load", onLoad);
@@ -673,6 +709,12 @@ function App() {
     const library = googleLibrary.current;
     if (!scene || !library || !scenario) return;
     try {
+      const removeFromScene = (element: HTMLElement) => {
+        if (element.parentElement === scene) scene.removeChild(element);
+        else element.remove();
+      };
+      googleAnalysisOverlays.current.forEach(removeFromScene);
+      googleAnalysisOverlays.current = [];
       googleEndpointMarkers.current.forEach((marker) => marker.remove());
       googleEndpointMarkers.current = [];
       scene
@@ -685,6 +727,11 @@ function App() {
         element.dataset.gridpathOverlay = "true";
         scene.append(element);
       };
+      const addAnalysis = (element: HTMLElement) => {
+        element.dataset.gridpathAnalysis = "true";
+        googleAnalysisOverlays.current.push(element);
+        add(element);
+      };
       const addLine = (
         geometry: GeoJSON.Geometry,
         color: string,
@@ -692,7 +739,7 @@ function App() {
       ) => {
         if (geometry.type !== "LineString") return;
         const Polyline3DElement = library.Polyline3DElement;
-        add(
+        addAnalysis(
           new Polyline3DElement({
             path: geometry.coordinates.map(([lng, lat]) => ({
               lat,
@@ -815,7 +862,7 @@ function App() {
       }
       if (selectedRouteVisible && selectedPlan.right_of_way.type === "Polygon") {
         const Polygon3DElement = library.Polygon3DElement;
-        add(
+        addAnalysis(
           new Polygon3DElement({
             path: selectedPlan.right_of_way.coordinates[0].map(
               ([lng, lat]) => ({
@@ -1899,6 +1946,18 @@ function App() {
                   Google Photorealistic 3D · contextual visualization
                 </div>
               ) : null}
+            </div>
+            <div className="map-utility-zoom" aria-label="Map zoom controls">
+              <button type="button" onClick={() => adjustMapZoom(1)} title="Zoom in" aria-label="Zoom in">+</button>
+              <button type="button" onClick={() => adjustMapZoom(-1)} title="Zoom out" aria-label="Zoom out">−</button>
+            </div>
+            <div className="map-utility-actions" aria-label="Map orientation and display controls">
+              <button type="button" onClick={resetMapOrientation} title="Reset orientation" aria-label="Reset orientation">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5.8 18.2 12 15l6.2 3.2L12 3Zm0 8.3-2.2 4.3 2.2-1.1 2.2 1.1-2.2-4.3Z" /></svg>
+              </button>
+              <button type="button" onClick={toggleMapFullscreen} title="Toggle fullscreen" aria-label="Toggle fullscreen">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM4 15h2v3h3v2H4v-5Zm14 0h2v5h-5v-2h3v-3Z" /></svg>
+              </button>
             </div>
             <button
               className="focus-route"
