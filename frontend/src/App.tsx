@@ -1,8 +1,13 @@
 import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { loadGoogleMaps3D } from "./google3d";
 import { MapErrorBoundary } from "./MapErrorBoundary";
+
+// Vite's production bundle needs an explicit GeoJSON worker asset.  Raster
+// tiles can render without it, but all dynamic GeoJSON sources depend on it.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 type Bounds = { west: number; south: number; east: number; north: number };
 type Strategy = "shortest" | "environmental" | "constructability";
@@ -509,6 +514,32 @@ function App() {
       setPlacementMode(null);
     }
   }, [clearResults, draftEndpoints, placementMode]);
+  const syncDynamicOverlayLayerOrder = useCallback((instance: MapLibreMap) => {
+    [
+      "route-row-fill", "route-row-outline", "route-connector-underlay",
+      "route-connectors", "routes-underlay", "routes-centreline",
+      "selection-radius", "selection-points", "selection-labels",
+    ].forEach((id) => {
+      if (instance.getLayer(id)) instance.moveLayer(id);
+    });
+  }, []);
+  const ensureDynamicOverlaySourcesAndLayers = useCallback((instance: MapLibreMap) => {
+    const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+    const ensureSource = (id: string) => {
+      if (!instance.getSource(id)) instance.addSource(id, { type: "geojson", data: empty });
+    };
+    ["gridpath-selection", "gridpath-radius", "gridpath-routes", "gridpath-route-corridor", "gridpath-route-connectors"].forEach(ensureSource);
+    if (!instance.getLayer("route-row-fill")) instance.addLayer({ id: "route-row-fill", type: "fill", source: "gridpath-route-corridor", paint: { "fill-color": "#22e7f0", "fill-opacity": 0.16 } });
+    if (!instance.getLayer("route-row-outline")) instance.addLayer({ id: "route-row-outline", type: "line", source: "gridpath-route-corridor", paint: { "line-color": "#22e7f0", "line-width": 1.5, "line-opacity": 0.82 } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("route-connector-underlay")) instance.addLayer({ id: "route-connector-underlay", type: "line", source: "gridpath-route-connectors", paint: { "line-color": "#05090d", "line-width": 7, "line-opacity": 0.95 } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("route-connectors")) instance.addLayer({ id: "route-connectors", type: "line", source: "gridpath-route-connectors", paint: { "line-color": "#22e7f0", "line-width": 2.5, "line-opacity": 1, "line-dasharray": [2, 1.5] } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("routes-underlay")) instance.addLayer({ id: "routes-underlay", type: "line", source: "gridpath-routes", paint: { "line-color": "#03080a", "line-width": 9, "line-opacity": 0.78 } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("routes-centreline")) instance.addLayer({ id: "routes-centreline", type: "line", source: "gridpath-routes", paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.76 } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("selection-radius")) instance.addLayer({ id: "selection-radius", type: "line", source: "gridpath-radius", paint: { "line-color": "#25f4d0", "line-width": 1.5, "line-opacity": 0.6, "line-dasharray": [2, 2] } } as maplibregl.LineLayerSpecification);
+    if (!instance.getLayer("selection-points")) instance.addLayer({ id: "selection-points", type: "circle", source: "gridpath-selection", paint: { "circle-radius": 7, "circle-color": ["match", ["get", "endpoint_id"], "grid_connection", "#25f4d0", "#f044b7"], "circle-stroke-color": "#071014", "circle-stroke-width": 2.4 } });
+    if (!instance.getLayer("selection-labels")) instance.addLayer({ id: "selection-labels", type: "symbol", source: "gridpath-selection", layout: { "text-field": ["match", ["get", "endpoint_id"], "grid_connection", "Point A", "Point B"], "text-size": 10, "text-offset": [0, -1.45], "text-allow-overlap": true }, paint: { "text-color": "#eaf5fb", "text-halo-color": "#071014", "text-halo-width": 1.25 } } as maplibregl.SymbolLayerSpecification);
+    syncDynamicOverlayLayerOrder(instance);
+  }, [syncDynamicOverlayLayerOrder]);
 
   useEffect(() => {
     if (!scenario || !mapContainer.current || map.current) return;
@@ -531,12 +562,12 @@ function App() {
     });
     map.current = instance;
     instance.addControl(new maplibregl.NavigationControl(), "bottom-right");
-    const onStyleLoad = () => {
-      setMapReady(true);
-      setStyleRevision((revision) => revision + 1);
-    };
+    const onLoad = () => setMapReady(true);
+    const onStyleLoad = () => setStyleRevision((revision) => revision + 1);
+    instance.on("load", onLoad);
     instance.on("style.load", onStyleLoad);
     return () => {
+      instance.off("load", onLoad);
       instance.off("style.load", onStyleLoad);
       instance.remove();
       map.current = null;
@@ -977,7 +1008,11 @@ function App() {
         "line-dasharray": [1.2, 2],
       },
     );
-  }, [mapReady, scenario, styleRevision]);
+    // Scenario layers are asynchronous relative to map load; restore the
+    // analysis overlays after they have been appended.
+    ensureDynamicOverlaySourcesAndLayers(instance);
+    syncDynamicOverlayLayerOrder(instance);
+  }, [ensureDynamicOverlaySourcesAndLayers, mapReady, scenario, styleRevision, syncDynamicOverlayLayerOrder]);
   useEffect(() => {
     if (!map.current || !scenario) return;
     const instance = map.current;
@@ -1143,6 +1178,7 @@ function App() {
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
+    ensureDynamicOverlaySourcesAndLayers(instance);
     const endpoints = Object.entries(displayedEndpoints).filter(
       (entry): entry is [string, GeoPoint] => Boolean(entry[1]),
     );
@@ -1219,6 +1255,7 @@ function App() {
   }, [
     displayedEndpoints,
     draftEndpoints.grid_connection,
+    ensureDynamicOverlaySourcesAndLayers,
     mapReady,
     placementMode,
     styleRevision,
@@ -1226,6 +1263,7 @@ function App() {
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const instance = map.current;
+    ensureDynamicOverlaySourcesAndLayers(instance);
     const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
     const asFeatures = (
       geometry: GeoJSON.Geometry,
@@ -1319,21 +1357,25 @@ function App() {
         "line-opacity": ["case", selected, 1, 0.76],
       },
     } as maplibregl.LineLayerSpecification);
-    ["route-row-fill", "route-row-outline", "route-connector-underlay", "route-connectors", "routes-underlay", "routes-centreline"].forEach((id) =>
-      instance.moveLayer(id),
-    );
+    instance.setPaintProperty("routes-underlay", "line-width", ["case", selected, 14, 9]);
+    instance.setPaintProperty("routes-underlay", "line-opacity", ["case", selected, 0.98, 0.78]);
+    instance.setPaintProperty("routes-centreline", "line-width", ["case", selected, 8, 4]);
+    instance.setPaintProperty("routes-centreline", "line-opacity", ["case", selected, 1, 0.76]);
     instance.setPaintProperty("route-row-fill", "fill-color", routeMeta[selectedStrategy].color);
     instance.setPaintProperty("route-row-outline", "line-color", routeMeta[selectedStrategy].color);
     instance.setPaintProperty("route-connectors", "line-color", routeMeta[selectedStrategy].color);
+    syncDynamicOverlayLayerOrder(instance);
   }, [
     alternatives,
     corridorGroups,
+    ensureDynamicOverlaySourcesAndLayers,
     mapReady,
     selectedCorridorKey,
     selectedPlan,
     selectedRouteVisible,
     selectedStrategy,
     styleRevision,
+    syncDynamicOverlayLayerOrder,
     visibleCorridorGroups,
   ]);
   useEffect(() => {
