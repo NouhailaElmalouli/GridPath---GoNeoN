@@ -1,50 +1,67 @@
 # GridPath MVP Product Scope
 
-GridPath is an agentic power-line alignment and right-of-way screening concept
-for this exercise, not an official goNEON product. It is adjacent to goNEON
-Corridor Studies: Corridor Studies routes cycling infrastructure over existing
-streets; GridPath evaluates free-space overhead power-transmission alignment
-over a raster cost surface.
+GridPath is a focused underground-infrastructure corridor-screening prototype
+for the goNEON Platform & Ecosystem Owner exercise. It demonstrates the kind of
+deterministic planning workflow that could be built on top of a broader
+infrastructure-planning platform; it is not an official goNEON product.
 
-## User story
+## Problem demonstrated
 
-As an infrastructure planner, I want to describe power-line alignment priorities
-in plain language and compare feasible alternatives so that I can understand
-right-of-way, environmental, and settlement trade-offs before detailed engineering begins.
+Early corridor discussions often need a fast, transparent way to compare
+plausible connections before detailed survey, rights, utility, and approval
+work begins. GridPath lets a planner choose two nearby locations and screens
+mapped road-corridor alternatives against a prepared set of engineering and
+environmental considerations. The value of the MVP is an explainable comparison
+of alternatives, not an automated route approval.
 
-## Prepared scenario
+## Intended user
 
-- Location: a compact study area in Zürich, selected after data inspection.
-- Origin: representative grid connection point.
-- Destination: explicitly synthetic proposed development endpoint.
-- Infrastructure: overhead power-transmission alignment with a configurable
-  right-of-way buffer.
-- Hard exclusions: building footprints plus configurable safety buffers and
-  explicitly protected areas.
-- Soft penalties: forest/green areas, water crossings, proximity to settlements,
-  and route length.
+The intended user is an engineering or planning professional exploring an
+underground-infrastructure connection within the prepared Zurich-region study
+area. They use the prototype to set Point A and Point B, review the resulting
+corridor options, and understand their measured trade-offs.
 
-The endpoints describe a demonstrative planning scenario and must not be
-presented as an actual proposed infrastructure project.
+## Current functionality
 
-## Primary interaction
+- A planner explicitly selects Point A and Point B within the prepared study
+  area, subject to the MVP's 1 km maximum straight-line separation.
+- The service validates and snaps those locations to the eligible prepared road
+  network.
+- Deterministic graph-based routing generates candidate underground-corridor
+  paths from the prepared network.
+- A requested corridor width and building-clearance assumptions are evaluated
+  in a metric Swiss coordinate system, alongside mapped environmental and
+  access-related indicators.
+- The prototype compares up to three objective-led alternatives: shortest, low
+  environmental impact, and constructability.
+- Returned WGS84 GeoJSON and route metrics are visualized in 2D MapLibre and a
+  contextual 3D view when configured; an assessment can be exported as GeoJSON.
 
-1. The user enters or selects a planning objective.
-2. The agent converts it into typed constraints and priorities.
-3. The deterministic engine creates shortest-feasible, lowest-environmental-impact,
-   and balanced alternatives.
-4. Every alternative is validated against vector constraints.
-5. The interface compares length, minimum settlement clearance, buildings within
-   right-of-way, protected-area intersection, forest overlap, water crossings,
-   and deterministic composite score.
-6. The agent explains why the routes differ and recommends a route only in the
-   context of the stated priorities.
+## Deliberately out of scope
 
-## Acceptance criteria
+- City-wide, multi-scenario, or live-data operation.
+- Routing outside the prepared road network or selecting a real utility
+  alignment.
+- Detailed utility capacity, subsurface conditions, survey, land ownership,
+  easements, cost estimation, permitting, or stakeholder workflow.
+- Regulatory compliance, safety certification, construction design, or a
+  recommendation to build.
+- User accounts, persistence, collaboration, uploads, and production-scale
+  operational controls.
 
-- A first-time reviewer can run the core workflow without instructions.
-- The map visibly distinguishes endpoints, exclusions, buffers, and routes.
-- Changing the right-of-way buffer or priority produces a deterministic recalculation.
-- Invalid routes are rejected or visibly marked, never silently accepted.
-- The same request and scenario produce the same computed routes and metrics.
-- The app remains demonstrable if the LLM request fails.
+## Prototype limitations
+
+The scenario relies on prepared map data, which can be incomplete or outdated.
+Mapped roads are used as preliminary accessible corridor proxies, not verified
+utility easements. Environmental layers are screening evidence rather than
+statutory determinations, and calculated metrics are deterministic indicators
+rather than field-validated facts. The 3D view is contextual visualization only.
+
+## Why the scope is narrow
+
+The exercise intentionally concentrates on one prepared Zurich-region scenario
+and a short, user-defined connection. This keeps the end-to-end workflow
+reviewable: explicit input, metric coordinate handling, deterministic candidate
+generation, transparent comparison, and visual communication of results. It
+shows a credible platform extension without implying that the MVP replaces
+detailed engineering or approval processes.

@@ -11,7 +11,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Deterministic geospatial planning API for GridPath power-line screening.",
+    description="API for deterministic underground infrastructure corridor screening and alternative evaluation.",
 )
 
 app.add_middleware(

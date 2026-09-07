@@ -1,1 +1,1 @@
-"""GridPath power-line alignment and right-of-way screening API."""
+"""GridPath underground infrastructure corridor-screening API."""
